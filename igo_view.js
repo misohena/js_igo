@@ -326,10 +326,14 @@ class BoardElement{
             intersection.state = EMPTY;
         }
     }
-    setByBoard(board){
+    setByBoard(board, rotate180){
         for(let y = 0; y < board.h; ++y){
             for(let x = 0; x < board.w; ++x){
-                this.setIntersectionState(x, y, board.getAt(board.toPosition(x, y)));
+                this.setIntersectionState(
+                    x, y,
+                    board.getAt(board.toPosition(
+                        rotate180 ? board.w - 1 - x : x,
+                        rotate180 ? board.h - 1 - y : y)));
             }
         }
     }
@@ -369,6 +373,7 @@ class GameView{
         this.parent = parent = parent || document.body;
 
         this.showBranches = false;
+        this.rotate180 = false;
 
         this.resetGame(game || new Game(9));
     }
@@ -394,14 +399,15 @@ class GameView{
         rootElement.appendChild(boardElement.element);
 
         boardElement.onIntersectionClick = (x, y, e)=>{
-            this.onIntersectionClick(this.model.board.toPosition(x, y), e);
+            this.onIntersectionClick(this.toBoardPosition(x, y), e);
         };
 
         boardElement.onStoneClick = (x, y, e)=>{
-            this.onStoneClick(this.model.board.toPosition(x, y), e);
+            this.onStoneClick(this.toBoardPosition(x, y), e);
         };
 
             // Preview Stone
+        const self = this;
         const previewStoneBlack = boardElement.createStone(0, 0, BLACK).stone;
         const previewStoneWhite = boardElement.createStone(0, 0, WHITE).stone;
         let currentPreviewStone = null;
@@ -424,7 +430,7 @@ class GameView{
             if(!game.isFinished() &&
                eventPos.x >= 0 && eventPos.y >= 0 &&
                eventPos.x < w && eventPos.y < h &&
-               game.board.getAt(game.board.toPosition(eventPos.x, eventPos.y)) == EMPTY){
+               game.board.getAt(self.toBoardPosition(eventPos.x, eventPos.y)) == EMPTY){
 
                 showPreviewStone();
                 currentPreviewStone.setAttributeNS(null, "cx", eventPos.gridX);
@@ -510,6 +516,20 @@ class GameView{
         }
     }
 
+    toBoardPosition(x, y){
+        return this.model.board.toPosition(
+            this.rotate180 ? this.model.board.w - 1 - x : x,
+            this.rotate180 ? this.model.board.h - 1 - y : y);
+    }
+    toBoardX(pos){
+        const x = this.model.board.toX(pos);
+        return this.rotate180 ? this.model.board.w - 1 - x : x;
+    }
+    toBoardY(pos){
+        const y = this.model.board.toY(pos);
+        return this.rotate180 ? this.model.board.h - 1 - y : y;
+    }
+
     //
     // Update Contents
     //
@@ -526,7 +546,7 @@ class GameView{
     //
 
     updateBoard(){
-        this.boardElement.setByBoard(this.model.board);
+        this.boardElement.setByBoard(this.model.board, this.rotate180);
     }
 
     onIntersectionClick(pos, e){this.putStone(pos);}
@@ -627,6 +647,10 @@ class GameView{
             this.showBranches = e.target.checked;
             this.update();
         });
+        createCheckbox(historyDiv, "180度回転", this.rotate180, (e)=>{
+            this.rotate180 = e.target.checked;
+            this.update();
+        });
     }
 
     updateBranchTexts(){
@@ -658,11 +682,11 @@ class GameView{
             const x =
                   move.pos == NPOS ? (this.w-1)/2-1 :
                   move.pos == POS_RESIGN ? (this.w-1)/2+1 :
-                  this.model.board.toX(move.pos);
+                  this.toBoardX(move.pos);
             const y =
                   move.pos == NPOS ? this.h :
                   move.pos == POS_RESIGN ? this.h :
-                  this.model.board.toY(move.pos);
+                  this.toBoardY(move.pos);
             const branchElem = this.boardElement.createOverlayText(
                 x, y, text, fill,
                 e=>this.onBranchTextClick(move.pos, e),
