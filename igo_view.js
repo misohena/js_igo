@@ -36,15 +36,60 @@ function createElement(elemName, attrs, parent){
     return elem;
 }
 
-function createPopupMenu(items, parent, x, y){
-    const menuDiv = createElement("div", {
+function createDialogWindow(parent){
+    parent = parent || document.body;
+    const dialog = createElement("div", {
         style: "user-select:none;"+
-            "position:fixed;"+
-            "left:" + x + "px;"+
-            "top:" + y + "px;"+
-            "background-color:rgba(255, 255, 255, 0.8);"+
             "border: 1px solid black;"+
-            "padding:4px 1px;"}, parent);
+            "background-color:rgba(250, 250, 250, 0.8);"+
+            "position:fixed;"+
+            "left:4.5%;"+
+            "top:1em;"+
+            "box-sizing: border-box;"+
+            "max-width:90%;"+
+            "padding:1em 1em;"
+    }, parent);
+
+    function isEventOutside(e){
+        let target = e.target;
+        while(target && target != dialog){
+            target = target.parentNode;
+        }
+        return target != dialog;
+    }
+    function onOutsideClick(e){
+        if(isEventOutside(e)){
+            e.stopPropagation();
+            close();
+        }
+    }
+    function onOutsideEvent(e){
+        if(isEventOutside(e)){
+            e.stopPropagation();
+        }
+    }
+    document.body.addEventListener("click", onOutsideClick, true);
+    document.body.addEventListener("mousemove", onOutsideEvent, true);
+    document.body.addEventListener("mousedown", onOutsideEvent, true);
+    document.body.addEventListener("mouseup", onOutsideEvent, true);
+
+    function close(){
+        parent.removeChild(dialog);
+        document.body.removeEventListener("click", onOutsideClick, true);
+        document.body.removeEventListener("mousemove", onOutsideEvent, true);
+        document.body.removeEventListener("mousedown", onOutsideEvent, true);
+        document.body.removeEventListener("mouseup", onOutsideEvent, true);
+    }
+
+    dialog.close = close;
+    return dialog;
+}
+
+function createPopupMenu(items, parent, x, y){
+    const menuDiv = createDialogWindow(parent);
+    menuDiv.style.left = x + "px";
+    menuDiv.style.top = y + "px";
+    menuDiv.style.padding = "4px 1px";
 
     const ITEM_BG_NORMAL = "";
     const ITEM_BG_HOVER = "rgba(200, 200, 200, 1.0)";
@@ -56,7 +101,7 @@ function createPopupMenu(items, parent, x, y){
             if(item.handler){
                 item.handler();
             }
-            close();
+            menuDiv.close();
         }, false);
         itemDiv.addEventListener("mouseenter", e=>{
             itemDiv.style.backgroundColor = ITEM_BG_HOVER;
@@ -65,40 +110,6 @@ function createPopupMenu(items, parent, x, y){
             itemDiv.style.backgroundColor = ITEM_BG_NORMAL;
         }, false);
     }
-
-    function onOutsideClick(e){
-        let target = e.target;
-        while(target && target != menuDiv){
-            target = target.parentNode;
-        }
-        if(target != menuDiv){
-            e.stopPropagation();
-            close();
-        }
-    }
-    parent.addEventListener("click", onOutsideClick, true);
-
-    function close(){
-        parent.removeChild(menuDiv);
-        parent.removeEventListener("click", onOutsideClick, true);
-    }
-}
-
-function createDialogWindow(parent){
-    const dialog = createElement("div", {
-        style: "user-select:none;"+
-            "position:fixed;"+
-            "left:4.5%;"+
-            "top:1em;"+
-            "box-sizing: border-box;"+
-            "max-width:90%;"+
-            "padding:1em 1em;"+
-            "border: 1px solid black;"+
-            "background-color:rgba(250, 250, 250, 0.8);"}, parent);
-    dialog.close = ()=>{
-        dialog.parentNode.removeChild(dialog);
-    };
-    return dialog;
 }
 
 function createTextDialog(parent, message, text, onOk){
