@@ -88,8 +88,6 @@ function createDialogWindow(parent){
 
 function createPopupMenu(items, parent, x, y){
     const menuDiv = createDialogWindow(parent);
-    menuDiv.style.left = x + "px";
-    menuDiv.style.top = y + "px";
     menuDiv.style.padding = "4px 1px";
 
     const ITEM_BG_NORMAL = "";
@@ -111,6 +109,18 @@ function createPopupMenu(items, parent, x, y){
             itemDiv.style.backgroundColor = ITEM_BG_NORMAL;
         }, false);
     }
+
+    const bcr = menuDiv.getBoundingClientRect();
+    const menuW = bcr.right - bcr.left;
+    const menuH = bcr.bottom - bcr.top;
+    if(x + menuW > window.innerWidth){
+        x = window.innerWidth - menuW;
+    }
+    if(y + menuH > window.innerHeight){
+        y = window.innerHeight - menuH;
+    }
+    menuDiv.style.left = x + "px";
+    menuDiv.style.top = y + "px";
 }
 
 function createTextDialog(parent, message, text, onOk){
