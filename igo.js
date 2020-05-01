@@ -7,7 +7,9 @@ const EMPTY = igo.EMPTY = 0;
 const BLACK = igo.BLACK = 1;
 const WHITE = igo.WHITE = 2;
 const NPOS = igo.NPOS = -1; //invalid position
-const POS_RESIGN = igo.POS_RESIGN = -2; // use history & game only. do not use board
+// use history & game only. do not use board
+const POS_PASS = igo.POS_PASS = -2;
+const POS_RESIGN = igo.POS_RESIGN = -3;
 
 //
 // Color
@@ -22,6 +24,12 @@ function getColorIndex(color)
 igo.isValidColor = isValidColor;
 igo.getOppositeColor = getOppositeColor;
 igo.getColorIndex = getColorIndex;
+
+//
+// Position
+//
+function isIntersectionPosition(pos)
+    {return pos >= 0;}
 
 //
 // 2-bits array
@@ -146,7 +154,7 @@ class Board{
         this.koPos = NPOS;
 
         if(history){
-            history.push(NPOS, null, koPosOld, this.koPos);
+            history.pushPass(koPosOld);
         }
         this.rotateTurn();
     }
@@ -425,7 +433,7 @@ class HistoryUtil {
         // move {pos, removedStones, koPosOld, koPosNew}
         const oppositeColor = board.getTurn();
         const color = getOppositeColor(oppositeColor);
-        if(move.pos != NPOS){
+        if(board.isValidPosition(move.pos)){//exclude NPOS,POS_PASS,POS_RESIGN
             board.removeStone(move.pos);
         }
         if(move.removedStones){
@@ -435,22 +443,27 @@ class HistoryUtil {
             board.removePrisoners(oppositeColor, move.removedStones.length);
         }
         board.setKoPos(move.koPosOld);
-        board.setTurn(color);
+        if(board.isValidPosition(move.pos) || move.pos == POS_PASS){
+            board.setTurn(color);
+        }
     }
     static redoBoard(move, board){
         // move {pos, removedStones, koPosOld, koPosNew}
         const color = board.getTurn();
-        if(move.pos != NPOS){
+        const oppositeColor = getOppositeColor(color);
+        if(board.isValidPosition(move.pos)){//exclude NPOS,POS_PASS,POS_RESIGN
             board.setAt(move.pos, color);
         }
         if(move.removedStones){
             for(const pos of move.removedStones){
                 board.removeStone(pos);
             }
-            board.addPrisoners(getOppositeColor(color), move.removedStones.length);
+            board.addPrisoners(oppositeColor, move.removedStones.length);
         }
         board.setKoPos(move.koPosNew);
-        board.setTurn(getOppositeColor(color));
+        if(board.isValidPosition(move.pos) || move.pos == POS_PASS){
+            board.setTurn(oppositeColor);
+        }
     }
 }
 
@@ -465,6 +478,13 @@ class HistoryTree{
     getPreviousMove(){return this.pointer.prev;}
     getFirstMoves(){return this.first.nexts;}
 
+    pushPass(koPosOld){
+        this.push(POS_PASS, null, koPosOld, NPOS);
+    }
+    pushResign(koPos){
+        this.push(POS_RESIGN, null, koPos, koPos); //keep koPos, do not rotate a turn
+    }
+
     push(pos, removedStones, koPosOld, koPosNew){
         const moveSamePos = this.pointer.nexts.find(move=>move.pos == pos);
         if(moveSamePos){
@@ -477,7 +497,7 @@ class HistoryTree{
             this.pointer.lastVisited = newMove;
             this.pointer = newMove;
         }
-        if(pos != POS_RESIGN){
+        if(isIntersectionPosition(pos) || pos == POS_PASS){ //exclude NPOS, POS_RESIGN
             ++this.moveNumber;
         }
     }
@@ -486,14 +506,18 @@ class HistoryTree{
             return false;
         }
         const move = this.pointer;
+
+        // undo Game state
         if(move.pos == POS_RESIGN){
             game.cancelFinish();
         }
-        else{
-            if(this.pointer.pos == NPOS && this.pointer.prev.pos == NPOS){
-                game.cancelFinish();
-            }
-            HistoryUtil.undoBoard(move, board);
+        else if(this.pointer.pos == POS_PASS && this.pointer.prev.pos == POS_PASS){
+            game.cancelFinish();
+        }
+        // undo board
+        HistoryUtil.undoBoard(move, board);
+        // undo move number
+        if(isIntersectionPosition(move.pos) || move.pos == POS_PASS){ //exclude NPOS, POS_RESIGN
             --this.moveNumber;
         }
         this.pointer = this.pointer.prev;
@@ -504,14 +528,17 @@ class HistoryTree{
             return false;
         }
         const move = this.pointer.lastVisited;
+        // redo Game state
         if(move.pos == POS_RESIGN){
             game.setFinished(getOppositeColor(board.getTurn()));
         }
-        else{
-            if(this.pointer.pos == NPOS && this.pointer.lastVisited.pos == NPOS){
-                game.setFinished(EMPTY); ///@todo 勝敗判定！
-            }
-            HistoryUtil.redoBoard(move, board);
+        else if(this.pointer.pos == NPOS && this.pointer.lastVisited.pos == NPOS){
+            game.setFinished(EMPTY); ///@todo 勝敗判定！
+        }
+        // redo board
+        HistoryUtil.redoBoard(move, board);
+        // redo move number
+        if(isIntersectionPosition(move.pos) || move.pos == POS_PASS){ //exclude NPOS, POS_RESIGN
             ++this.moveNumber;
         }
         this.pointer = this.pointer.lastVisited;
@@ -613,7 +640,7 @@ class Game{
 
     pass(){
         if( ! this.finished){
-            const prevMoveIsPass = this.history.getCurrentMove().pos == NPOS;
+            const prevMoveIsPass = this.history.getCurrentMove().pos == POS_PASS;
             this.board.pass(this.history);
 
             if(prevMoveIsPass){
@@ -632,7 +659,7 @@ class Game{
     resign(){
         if( ! this.finished){
             this.setFinished(getOppositeColor(this.getTurn()));
-            this.history.push(POS_RESIGN, null, this.board.koPos, this.board.koPos); //keep koPos, do not rotate a turn
+            this.history.pushResign(this.board.koPos); //keep koPos, do not rotate a turn
         }
     }
 
@@ -671,13 +698,16 @@ class Game{
                 if(numSiblings > 1){
                     str += "(";
                 }
-                str += ";" +
-                    (level&1 ? "W" : "B") +
-                    "[" +
-                    (move.pos == NPOS ? "" :
-                     toLetter(this.board.toX(move.pos)) +
-                     toLetter(this.board.toY(move.pos))) +
-                    "]";
+                str += ";";
+                if(move.pos != NPOS){
+                    str +=
+                        (level&1 ? "W" : "B") +
+                        "[" +
+                        (move.pos == POS_PASS ? "" :
+                         toLetter(this.board.toX(move.pos)) +
+                         toLetter(this.board.toY(move.pos))) +
+                        "]";
+                }
             },
             (move,indexSiblings,numSiblings,level)=>{ //leave
                 if(move.pos == POS_RESIGN){

@@ -7,6 +7,7 @@ const EMPTY = igo.EMPTY;
 const BLACK = igo.BLACK;
 const WHITE = igo.WHITE;
 const NPOS = igo.NPOS;
+const POS_PASS = igo.POS_PASS;
 const POS_RESIGN = igo.POS_RESIGN;
 const Game = igo.Game;
 
@@ -686,16 +687,19 @@ class GameView{
         for(let i = 0; i < nexts.length; ++i){
             const move = nexts[i];
             const text =
-                  move.pos == NPOS ? "パス" :
+                  move.pos == NPOS ? "無着手" :
+                  move.pos == POS_PASS ? "パス" :
                   move.pos == POS_RESIGN ? "投了" :
                   nexts.length == 1 ? "×" :
                   String.fromCharCode("A".charCodeAt() + i);
             const x =
-                  move.pos == NPOS ? (this.w-1)/2-1 :
-                  move.pos == POS_RESIGN ? (this.w-1)/2+1 :
+                  move.pos == NPOS ? this.w-5 :
+                  move.pos == POS_PASS ? this.w-3 :
+                  move.pos == POS_RESIGN ? this.w-1 :
                   this.toBoardX(move.pos);
             const y =
                   move.pos == NPOS ? this.h :
+                  move.pos == POS_PASS ? this.h :
                   move.pos == POS_RESIGN ? this.h :
                   this.toBoardY(move.pos);
             const branchElem = this.boardElement.createOverlayText(
@@ -711,6 +715,9 @@ class GameView{
         createPopupMenu([
             {text:"ここに打つ", handler:()=>{
                 if(pos == NPOS){
+                    ///@todo
+                }
+                else if(pos == POS_PASS){
                     this.pass();
                 }
                 else if(pos == POS_RESIGN){
