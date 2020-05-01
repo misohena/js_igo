@@ -475,6 +475,7 @@ class GameView{
 
         // History Controller
         this.createHistoryController();
+        this.createCommentTextArea();
 
         this.update();
     }
@@ -483,7 +484,8 @@ class GameView{
         createPopupMenu([
             {text:"初期化", handler:()=>this.openResetDialog()},
             {text:"SGFインポート", handler:()=>this.importSGF()},
-            {text:"SGFエクスポート", handler:()=>this.exportSGF()}
+            {text:"SGFエクスポート", handler:()=>this.exportSGF()},
+            {text:"コメント設定", handler:()=>this.setCommentToCurrentMove()}
         ], document.body, e.clientX, e.clientY);
     }
 
@@ -559,6 +561,7 @@ class GameView{
     update(){
         this.updateBoard();
         this.updateStatusText();
+        this.updateCommentTextArea();
         this.updateBranchTexts();
     }
 
@@ -757,6 +760,9 @@ class GameView{
         this.model.backToMove(pos);
         this.update();
     }
+
+    // SGF
+
     exportSGF(){
         createTextDialog(
             document.body,
@@ -772,6 +778,58 @@ class GameView{
                 const game = Game.fromSGF(dialog.textarea.value);
                 this.resetGame(game);
             });
+    }
+
+    // Comment
+
+    createCommentTextArea(){
+        const div = createElement("div", {"class":"comment control-bar"}, this.rootElement);
+        const textarea = this.commentTextArea = createElement("textarea", {}, div);
+        textarea.addEventListener("change", (e)=>this.onCommentTextAreaChange(e), false);
+        this.commentTextAreaTarget = null;
+    }
+
+    updateCommentTextArea(){
+        if(this.commentTextArea){
+            this.updateCommentPropertyFromTextArea();
+
+            const move = this.model.history.getCurrentMove();
+            if(move && move.hasOwnProperty("comment")){
+                this.commentTextAreaTarget = move;
+                this.commentTextArea.value = move.comment;
+                this.commentTextArea.style.display = "";
+            }
+            else{
+                this.commentTextAreaTarget = null;
+                this.commentTextArea.value = "";
+                this.commentTextArea.style.display = "none";
+            }
+        }
+    }
+    onCommentTextAreaChange(e){
+        this.updateCommentPropertyFromTextArea();
+    }
+    updateCommentPropertyFromTextArea(){
+        // reflect comment textarea => property
+        if(this.commentTextAreaTarget){
+            const commentNew = this.commentTextArea.value;
+            if(commentNew){
+                if(commentNew != this.commentTextAreaTarget.comment){
+                    this.commentTextAreaTarget.comment = commentNew;///@todo use setCommentToCurrentMove?
+                }
+            }
+            else{
+                if(this.commentTextAreaTarget.hasOwnProperty("comment")){
+                    delete this.commentTextAreaTarget.comment;
+                    this.updateCommentTextArea();
+                }
+            }
+        }
+    }
+
+    setCommentToCurrentMove(){
+        this.model.setCommentToCurrentMove("");
+        this.updateCommentTextArea();
     }
 };
 igo.GameView = GameView;

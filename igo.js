@@ -478,6 +478,12 @@ class HistoryTree{
     getPreviousMove(){return this.pointer.prev;}
     getFirstMoves(){return this.first.nexts;}
 
+    setCommentToCurrentMove(text){
+        if(this.pointer){
+            this.pointer.comment = text;
+        }
+    }
+
     pushPass(koPosOld){
         this.push(POS_PASS, null, koPosOld, NPOS);
     }
@@ -673,6 +679,7 @@ class Game{
     redoAll(){this.history.redoAll(this.board, this);}
     backToMove(pos){this.history.backToMove(pos, this.board, this);}
 
+    setCommentToCurrentMove(text){this.history.setCommentToCurrentMove(text);}
 
     // SGF
 
