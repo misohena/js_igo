@@ -563,6 +563,7 @@ class GameView{
         this.updateBoard();
         this.updateStatusText();
         this.updateCommentTextArea();
+        this.updateHistoryController();
         this.updateBranchTexts();
     }
 
@@ -644,31 +645,25 @@ class GameView{
     //
 
     createHistoryController(){
-        const historyDiv = createElement("div", {"class": "control-bar"}, this.rootElement);
-        createButton(historyDiv, "|<", ()=>{
+        const historyDiv = this.historyController = createElement("div", {"class": "control-bar"}, this.rootElement);
+        const first = createButton(historyDiv, "|<", ()=>{
             this.model.undoAll();
             this.update();
         });
-        createButton(historyDiv, "<", ()=>{
+        const prev = createButton(historyDiv, "<", ()=>{
             this.model.undo();
             this.update();
         });
-        createButton(historyDiv, ">", ()=>{
+        const next = createButton(historyDiv, ">", ()=>{
             this.model.redo();
             this.update();
         });
-        createButton(historyDiv, ">|", ()=>{
+        const last = createButton(historyDiv, ">|", ()=>{
             this.model.redoAll();
             this.update();
         });
-        /* moved to main menu
-        createButton(historyDiv, "export", ()=>{
-            this.exportSGF();
-        });
-        createButton(historyDiv, "import", ()=>{
-            this.importSGF();
-        });
-        */
+        this.historyControllerButtons = {first, prev, next, last};
+
         createCheckbox(historyDiv, "分岐表示", this.showBranches, (e)=>{
             this.showBranches = e.target.checked;
             this.update();
@@ -677,6 +672,13 @@ class GameView{
             this.rotate180 = e.target.checked;
             this.update();
         });
+    }
+    updateHistoryController(){
+        const move = this.model.history.getCurrentMove();
+        this.historyControllerButtons.first.disabled = !move.prev;
+        this.historyControllerButtons.prev.disabled = !move.prev;
+        this.historyControllerButtons.next.disabled = !move.lastVisited;
+        this.historyControllerButtons.last.disabled = !move.lastVisited;
     }
 
     updateBranchTexts(){
