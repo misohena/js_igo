@@ -8,19 +8,23 @@
     <style>
     html { padding: 0;}
     body { padding: 0; margin: 0;}
-    button {
-        margin-left: 0.75em;
+
+    /* enlarge button */
+    button, input[type="button"] {
         padding: 0.5em 1em;
     }
-    input[type="button"] {
-        margin-left: 0.75em;
-        padding: 0.5em 1em;
+    /* UI top margin */
+    button, input, label, textarea {
+        margin-top: 0.5rem;
     }
-    input[type="checkbox"] {
-        margin-left: 0.75em;
+    /* space between UI elements */
+    input+input, button+button, input+button, button+input, input+label, label+input, label+label {
+        margin-left: 0.75rem;
     }
-    .control-bar {
-        margin-top:0.5em;
+
+    /* checkbox label */
+    label {
+        display: inline-block;
     }
     </style>
     <title>Go</title>
