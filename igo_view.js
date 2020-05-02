@@ -739,8 +739,11 @@ class GameView{
                 }
             }
         }
-        this.previewStone = new PreviewStone(this.boardElement);
+        const previewStone = this.previewStone = new PreviewStone(this.boardElement);
 
+        function hide(){
+            previewStone.hide();
+        }
         function controlPreviewStone(e){
             const eventPos = this.boardElement.convertEventPosition(e);
             if(eventPos.x >= 0 && eventPos.y >= 0 &&
@@ -750,27 +753,27 @@ class GameView{
                           this.mode.getPreviewStoneColor(eventPos.x, eventPos.y) :
                           EMPTY;
                 if(color != EMPTY){
-                    this.previewStone.show(color);
-                    this.previewStone.setPosition(eventPos.gridX, eventPos.gridY);
+                    previewStone.show(color);
+                    previewStone.setPosition(eventPos.gridX, eventPos.gridY);
                     return;
                 }
             }
-            this.previewStone.hide();
+            hide();
         }
         function controlPreviewStoneTouch(e){
             if(e.touches.length == 1){
                 controlPreviewStone.call(this, e.touches[0]);
             }
             else{
-                this.previewStone.hide();
+                hide();
             }
         }
         this.boardElement.element.addEventListener("mousemove", e=>controlPreviewStone.call(this, e), false);
-        this.boardElement.element.addEventListener("mouseout", e=>this.previewStone.hide(), false);
-        this.boardElement.element.addEventListener("click", e=>controlPreviewStone.call(this, e), false);
+        this.boardElement.element.addEventListener("mouseout", hide, false);
+        this.boardElement.element.addEventListener("click", hide, false);
         this.boardElement.element.addEventListener("touchmove", e=>controlPreviewStoneTouch.call(this, e), false);
-        this.boardElement.element.addEventListener("touchend", e=>controlPreviewStoneTouch.call(this, e), false);
-        this.boardElement.element.addEventListener("touchcancel", e=>controlPreviewStoneTouch.call(this, e), false);
+        this.boardElement.element.addEventListener("touchend", hide, false);
+        this.boardElement.element.addEventListener("touchcancel", hide, false);
     }
 
 
@@ -1108,6 +1111,7 @@ class GameView{
 
             hookEventHandlers(){
                 const eventNames = [
+                    "Click",
                     "MouseDown", "MouseUp", "MouseMove", "MouseLeave",
                     "TouchStart", "TouchEnd", "TouchMove", "TouchCancel"
                 ];
@@ -1120,7 +1124,7 @@ class GameView{
                 }
             }
             unhookEventHandlers(){
-                for(const ename of this.eventHandlers){
+                for(const ename in this.eventHandlers){
                     gameView.boardElement.element.removeEventListener(
                         ename.toLowerCase(),
                         this.eventHandlers[ename],
@@ -1130,11 +1134,16 @@ class GameView{
 
             // Mouse Event
 
+            onClick(e){
+                if(!this.drawing){
+                    this.paint(e);
+                }
+            }
+
             onMouseDown(e){
                 e.stopPropagation();
                 e.preventDefault();
                 this.startDrawing();
-                this.paint(e);
             }
             onMouseUp(e){
                 e.stopPropagation();
@@ -1157,9 +1166,7 @@ class GameView{
 
             onTouchStart(e){
                 if(e.touches.length == 1){
-                    e.preventDefault();
                     this.startDrawing();
-                    this.paint(e.touches[0]);
                 }
                 else{
                     this.endDrawing();
@@ -1200,15 +1207,13 @@ class GameView{
                 }
             }
             paint(e){
-                if(this.drawing){
-                    const eventPos = gameView.boardElement.convertEventPosition(e);
-                    const x = eventPos.x;
-                    const y = eventPos.y;
-                    if(x >= 0 && y >= 0 && x < gameView.boardElement.w && y < gameView.boardElement.h){
-                        const pos = gameView.toModelPosition(x, y);
-                        gameView.model.board.setAt(pos, this.color);
-                        gameView.updateIntersection(pos);
-                    }
+                const eventPos = gameView.boardElement.convertEventPosition(e);
+                const x = eventPos.x;
+                const y = eventPos.y;
+                if(x >= 0 && y >= 0 && x < gameView.boardElement.w && y < gameView.boardElement.h){
+                    const pos = gameView.toModelPosition(x, y);
+                    gameView.model.board.setAt(pos, this.color);
+                    gameView.updateIntersection(pos);
                 }
             }
         }
