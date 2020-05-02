@@ -256,6 +256,8 @@ class BoardElement{
         this.w = w;
         this.h = h;
 
+        this.stonePointerEvents = "auto";
+
         const gridInterval = this.gridInterval = opt.gridInterval || 32;
         const gridMargin = this.gridMargin = opt.gridMargin || 50;
 
@@ -323,6 +325,25 @@ class BoardElement{
         this.overlays = createSVG("g", {"class":"board-overlays"}, null, gridRoot);
     }
 
+    // Position
+
+    getIntersectionX(x){return x * this.gridInterval;}
+    getIntersectionY(y){return y * this.gridInterval;}
+
+    convertEventPosition(event){
+        const bcr = this.rootElement.getBoundingClientRect();
+        // coordinates for this.rootElement
+        const rootX = event.clientX - bcr.left;
+        const rootY = event.clientY - bcr.top;
+        // coordinates for this.gridRoot, this.shadows, this.stones, this.overlays
+        const gridX = rootX - this.gridMargin;
+        const gridY = rootY - this.gridMargin;
+        // coordinates for board model
+        const x = Math.floor(gridX / this.gridInterval + 0.5);
+        const y = Math.floor(gridY / this.gridInterval + 0.5);
+        return {rootX, rootY, gridX, gridY, x, y};
+    }
+
     defineStoneGradient(){
         return createSVG("defs", {}, [
             createSVG("radialGradient", {
@@ -337,23 +358,6 @@ class BoardElement{
                     createSVG("stop", {offset:"100%", "stop-color":"#b0b0b0"})
                 ])
         ]);
-    }
-
-    getIntersectionX(x){return x * this.gridInterval;}
-    getIntersectionY(y){return y * this.gridInterval;}
-
-    convertEventPosition(event){
-        const bcr = this.rootElement.getBoundingClientRect();
-        // coordinates for this.rootElement
-        const rootX = event.clientX - bcr.left;
-        const rootY = event.clientY - bcr.top;
-        // coordinates for this.shadows, this.stones, this.overlays
-        const gridX = rootX - this.gridMargin;
-        const gridY = rootY - this.gridMargin;
-        // coordinates for board model
-        const x = Math.floor(gridX / this.gridInterval + 0.5);
-        const y = Math.floor(gridY / this.gridInterval + 0.5);
-        return {rootX, rootY, gridX, gridY, x, y};
     }
 
     createStone(x, y, color){
@@ -374,7 +378,7 @@ class BoardElement{
     }
     createStoneOnIntersection(x, y, color){
         const elements = this.createStone(x, y, color);
-        elements.stone.style.pointerEvents = "auto";
+        elements.stone.style.pointerEvents = this.stonePointerEvents;
         const dispatcher = e=>{
             if(this.onStoneEvent){
                 this.onStoneEvent(x, y, e);
@@ -383,6 +387,20 @@ class BoardElement{
         elements.stone.addEventListener("mousemove", dispatcher, false);
         elements.stone.addEventListener("click", dispatcher, false);
         return elements;
+    }
+    setStonePointerEventsEnabled(enabled){
+        this.setStonePointerEvents(enabled ? "auto" : "none");
+    }
+    setStonePointerEvents(pointerEvents){
+        this.stonePointerEvents = pointerEvents;
+        // update all stones
+        for(let pos = 0; pos < this.intersections.length; ++pos){
+            const intersection = this.intersections[pos];
+            if(intersection.elements && intersection.elements.stone){
+                intersection.elements.stone.style.pointerEvents = pointerEvents;
+            }
+            intersection.state = EMPTY;
+        }
     }
     putStone(x, y, color){
         if(color == BLACK || color == WHITE){
@@ -714,6 +732,8 @@ class GameView{
                 this.boardElement = boardElement;
                 this.black = boardElement.createStone(0, 0, BLACK).stone;
                 this.white = boardElement.createStone(0, 0, WHITE).stone;
+                this.black.style.pointerEvents = "none";
+                this.white.style.pointerEvents = "none";
                 this.black.setAttributeNS(null, "opacity", 0.75);
                 this.white.setAttributeNS(null, "opacity", 0.75);
                 this.current = null;
@@ -1065,6 +1085,7 @@ class GameView{
                     this.hookEventHandlers();
                     this.alternately = false;
                     gameView.hideMainUI();
+                    gameView.boardElement.setStonePointerEventsEnabled(false); //石が盤面上のmouse/touchイベントを邪魔しないようにする
                 }
             }
             end(){
@@ -1073,6 +1094,7 @@ class GameView{
                     this.unhookEventHandlers();
                     this.controlBar.parentNode.removeChild(this.controlBar);
                     gameView.showMainUI();
+                    gameView.boardElement.setStonePointerEventsEnabled(true);
                 }
             }
 
