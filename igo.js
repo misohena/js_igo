@@ -855,8 +855,8 @@ class Game{
                     case "AB":
                     case "AW":
                     case "AE":
-                        {
-                            const pos = parseSGFMove(pvalues[0], w, h);
+                        for(const point of pvalues){
+                            const pos = parseSGFMove(point, w, h);
                             if(isValidPosition(pos, w, h)){
                                 game.setIntersectionStateForced(pos, pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY);
                             }
