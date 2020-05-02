@@ -92,17 +92,17 @@ function createDialogWindow(attrs, children, parent){
             e.stopPropagation();
         }
     }
-    document.body.addEventListener("click", onOutsideClick, true);
-    document.body.addEventListener("mousemove", onOutsideEvent, true);
-    document.body.addEventListener("mousedown", onOutsideEvent, true);
-    document.body.addEventListener("mouseup", onOutsideEvent, true);
+    document.addEventListener("click", onOutsideClick, true);
+    document.addEventListener("mousemove", onOutsideEvent, true);
+    document.addEventListener("mousedown", onOutsideEvent, true);
+    document.addEventListener("mouseup", onOutsideEvent, true);
 
     function close(){
         parent.removeChild(dialog);
-        document.body.removeEventListener("click", onOutsideClick, true);
-        document.body.removeEventListener("mousemove", onOutsideEvent, true);
-        document.body.removeEventListener("mousedown", onOutsideEvent, true);
-        document.body.removeEventListener("mouseup", onOutsideEvent, true);
+        document.removeEventListener("click", onOutsideClick, true);
+        document.removeEventListener("mousemove", onOutsideEvent, true);
+        document.removeEventListener("mousedown", onOutsideEvent, true);
+        document.removeEventListener("mouseup", onOutsideEvent, true);
     }
 
     dialog.close = close;
