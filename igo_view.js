@@ -757,9 +757,20 @@ class GameView{
             }
             this.previewStone.hide();
         }
+        function controlPreviewStoneTouch(e){
+            if(e.touches.length == 1){
+                controlPreviewStone.call(this, e.touches[0]);
+            }
+            else{
+                this.previewStone.hide();
+            }
+        }
         this.boardElement.element.addEventListener("mousemove", e=>controlPreviewStone.call(this, e), false);
         this.boardElement.element.addEventListener("mouseout", e=>this.previewStone.hide(), false);
         this.boardElement.element.addEventListener("click", e=>controlPreviewStone.call(this, e), false);
+        this.boardElement.element.addEventListener("touchmove", e=>controlPreviewStoneTouch.call(this, e), false);
+        this.boardElement.element.addEventListener("touchend", e=>controlPreviewStoneTouch.call(this, e), false);
+        this.boardElement.element.addEventListener("touchcancel", e=>controlPreviewStoneTouch.call(this, e), false);
     }
 
 
@@ -1048,7 +1059,7 @@ class GameView{
                     this.color = BLACK;
                     this.drawing = false;
                     this.createController();
-                    this.hookMouseEvent();
+                    this.hookEventHandlers();
                     this.alternately = false;
                     gameView.hideMainUI();
                 }
@@ -1056,7 +1067,7 @@ class GameView{
             end(){
                 if(this.alive){
                     this.alive = false;
-                    this.unhookMouseEvent();
+                    this.unhookEventHandlers();
                     this.controlBar.parentNode.removeChild(this.controlBar);
                     gameView.showMainUI();
                 }
@@ -1092,20 +1103,33 @@ class GameView{
                     })
                 ], gameView.rootElement);
             }
-            hookMouseEvent(){
-                gameView.boardElement.element.addEventListener("mousedown", this.onMouseDownThis = e=>this.onMouseDown(e), false);
-                gameView.boardElement.element.addEventListener("mouseup", this.onMouseUpThis = e=>this.onMouseUp(e), false);
-                gameView.boardElement.element.addEventListener("mousemove", this.onMouseMoveThis = e=>this.onMouseMove(e), false);
-                gameView.boardElement.element.addEventListener("mouseleave", this.onMouseLeaveThis = e=>this.onMouseLeave(e), false);
+
+            // Event Handlers
+
+            hookEventHandlers(){
+                const eventNames = [
+                    "MouseDown", "MouseUp", "MouseMove", "MouseLeave",
+                    "TouchStart", "TouchEnd", "TouchMove", "TouchCancel"
+                ];
+                this.eventHandlers = {};
+                for(const ename of eventNames){
+                    gameView.boardElement.element.addEventListener(
+                        ename.toLowerCase(),
+                        this.eventHandlers[ename] = e=>this["on" + ename].call(this, e),
+                        false);
+                }
             }
-            unhookMouseEvent(){
-                gameView.boardElement.element.removeEventListener("mousedown", this.onMouseDownThis, false);
-                gameView.boardElement.element.removeEventListener("mouseup", this.onMouseUpThis, false);
-                gameView.boardElement.element.removeEventListener("mousemove", this.onMouseMoveThis, false);
-                gameView.boardElement.element.removeEventListener("mouseleave", this.onMouseLeaveThis, false);
+            unhookEventHandlers(){
+                for(const ename of this.eventHandlers){
+                    gameView.boardElement.element.removeEventListener(
+                        ename.toLowerCase(),
+                        this.eventHandlers[ename],
+                        false);
+                }
             }
 
-            // Mouse Event Handlers
+            // Mouse Event
+
             onMouseDown(e){
                 e.stopPropagation();
                 e.preventDefault();
@@ -1128,6 +1152,35 @@ class GameView{
                     this.paint(e);
                 }
             }
+
+            // Touch Event
+
+            onTouchStart(e){
+                if(e.touches.length == 1){
+                    e.preventDefault();
+                    this.startDrawing();
+                    this.paint(e.touches[0]);
+                }
+                else{
+                    this.endDrawing();
+                }
+            }
+            onTouchEnd(e){
+                if(e.touches.length != 1){
+                    this.endDrawing();
+                }
+            }
+            onTouchCancel(e){
+                this.endDrawing();
+            }
+            onTouchMove(e){
+                if(e.touches.length == 1 && this.drawing){
+                    e.preventDefault();
+                    this.paint(e.touches[0]);
+                }
+            }
+
+
             // Drawing
             startDrawing(){
                 if(!this.drawing){
