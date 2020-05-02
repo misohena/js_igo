@@ -270,7 +270,11 @@ class BoardElement{
                 createSVG("rect",{x:0, y:0, width:boardPixelW, height:boardPixelH, fill:"#e3aa4e"}),
                 this.defineStoneGradient()
             ]);
-        this.clearViewport(); //set width=, height=
+
+        this.elementScale = 1.0; //SVG要素のサイズの縮尺(width=, height=に影響)
+        this.viewScale = 1.0; //表示する内容の縮尺(viewBox=に影響)
+        this.viewArea = {left:0, top:0, right:boardPixelW, bottom:boardPixelH, width:boardPixelW, height:boardPixelH}; //盤の中の表示する範囲(viewBox=に影響)
+        this.updateViewBox(); //set width= height=
 
         const gridRoot = this.gridRoot = createSVG("g", {
             "class":"board-grid-root",
@@ -333,10 +337,9 @@ class BoardElement{
         const bcr = this.rootElement.getBoundingClientRect();
         const xOnElement = event.clientX - bcr.left;
         const yOnElement = event.clientY - bcr.top;
-        ///@todo support scaling
         // coordinates for this.rootElement
-        const rootX = this.viewport.left + xOnElement;
-        const rootY = this.viewport.top + yOnElement;
+        const rootX = this.viewArea.left + xOnElement / (this.viewScale * this.elementScale);
+        const rootY = this.viewArea.top + yOnElement / (this.viewScale * this.elementScale);
         // coordinates for this.gridRoot, this.shadows, this.stones, this.overlays
         const gridX = rootX - this.gridMargin;
         const gridY = rootY - this.gridMargin;
@@ -477,7 +480,15 @@ class BoardElement{
         return elem;
     }
 
-    setViewport(x1, y1, x2, y2){
+    setElementScale(scale){
+        this.elementScale = scale;
+        this.updateViewBox();
+    }
+    setViewScale(scale){
+        this.viewScale = scale;
+        this.updateViewBox();
+    }
+    setViewArea(x1, y1, x2, y2){
         const l = Math.min(Math.max(Math.min(x1, x2), 0), this.w-1);
         const t = Math.min(Math.max(Math.min(y1, y2), 0), this.h-1);
         const r = Math.min(Math.max(Math.max(x1, x2), 0), this.w-1);
@@ -490,21 +501,29 @@ class BoardElement{
 
         const width = (right - left);
         const height = (bottom - top);
-        const viewBox = left + "," + top + "," + width + "," + height;
+        this.viewArea = {left, top, right, bottom, width, height};
 
-        this.rootElement.setAttributeNS(null, "viewBox", viewBox);
-        this.rootElement.setAttributeNS(null, "width", width);
-        this.rootElement.setAttributeNS(null, "height", height);
-
-        this.viewport = {left, top, right, bottom, width, height};
+        this.updateViewBox();
     }
-    clearViewport(){
+    clearViewArea(){
         const width = this.boardPixelW;
         const height = this.boardPixelH;
-        this.rootElement.removeAttributeNS(null, "viewBox");
-        this.rootElement.setAttributeNS(null, "width", width);
-        this.rootElement.setAttributeNS(null, "height", height);
-        this.viewport = {left:0, top:0, right:width, bottom:height, width, height};
+        this.viewArea = {left:0, top:0, right:width, bottom:height, width, height};
+        this.updateViewBox();
+    }
+    updateViewBox(){
+        const viewAreaW = this.viewArea.width / this.viewScale;
+        const viewAreaH = this.viewArea.height / this.viewScale;
+        const viewBox =
+              this.viewArea.left + "," +
+              this.viewArea.top + "," +
+              viewAreaW + "," +
+              viewAreaH;
+        const elementW = Math.ceil(this.viewArea.width * this.elementScale);
+        const elementH = Math.ceil(this.viewArea.height * this.elementScale);
+        this.rootElement.setAttributeNS(null, "viewBox", viewBox);
+        this.rootElement.setAttributeNS(null, "width", elementW);
+        this.rootElement.setAttributeNS(null, "height", elementH);
     }
 }
 igo.BoardElement = BoardElement;
@@ -544,8 +563,11 @@ class GameView{
         this.createGameStatusBar(); //set this.statusText
 
         // Board
+        const boardWrapper = this.boardWrapper = createElement("div", {
+            style: "overflow:hidden;"
+        }, [], rootElement);
         const boardElement = this.boardElement = new BoardElement(w, h);
-        rootElement.appendChild(boardElement.element);
+        boardWrapper.appendChild(boardElement.element);
 
         boardElement.onIntersectionClick = (x, y, e)=>{
             this.onIntersectionClick(this.toModelPosition(x, y), e);
@@ -557,7 +579,7 @@ class GameView{
 
         this.createPreviewStone();
 
-        this.updateViewport();
+        this.updateViewArea();
 
         // Move Controller
         this.createMoveController();
@@ -565,6 +587,9 @@ class GameView{
         // History Controller
         this.createHistoryController();
         this.createCommentTextArea();
+
+        //
+        this.keepBoardScale();
 
         this.update();
 
@@ -830,7 +855,7 @@ class GameView{
         this.boardElement.element.addEventListener("touchcancel", hide, false);
     }
 
-    updateViewport(){
+    updateViewArea(){
         const move = this.model.history.getCurrentMove();
         if(move && move.sgfProps){
             const points = move.sgfProps["VW"];
@@ -848,20 +873,56 @@ class GameView{
                     if(y > maxY){maxY = y;}
                 }
                 if(minX <= maxX && minY <= maxY){
-                    this.boardElement.setViewport(minX, minY, maxX, maxY);
+                    this.boardElement.setViewArea(minX, minY, maxX, maxY);
                 }
                 else{
-                    this.boardElement.clearViewport();
+                    this.boardElement.clearViewArea();
                 }
             }
         }
     }
 
+    keepBoardScale(){
+        const gameView = this;
+        window.addEventListener("resize", onResizeWindow);
+        function onResizeWindow(){// update size of boardElement
+            // control-bar height
+            const mainUIHeight = [
+                gameView.gameStatusDiv,
+                gameView.moveController,
+                gameView.historyController
+            ].reduce((acc, curr)=>{
+                const bcr = curr.getBoundingClientRect();
+                const height = bcr.bottom - bcr.top;
+                return acc + height;
+            }, 0);
+            // window size
+            const windowW = window.innerWidth;
+            const windowH = window.innerHeight;
+
+            // wrapper div width
+            const wrapperRect = gameView.boardWrapper.getBoundingClientRect();
+            const wrapperW = wrapperRect.right-wrapperRect.left;
+
+            // max board size
+            const maxBoardW = Math.min(windowW, wrapperW); //ウィンドウの幅か、包含divの幅
+            const maxBoardH = Math.max(windowH/3, windowH-mainUIHeight); //ウィンドウの1/3か、UIの高さを除いた高さ
+
+            // element size
+            const elementScaleX = Math.min(1, maxBoardW / gameView.boardElement.viewArea.width);
+            const elementScaleY = Math.min(1, maxBoardH / gameView.boardElement.viewArea.height);
+            const elementScale = Math.min(elementScaleX, elementScaleY);
+            gameView.boardElement.setElementScale(elementScale);
+        }
+        onResizeWindow();
+    }
+
+
     //
     // Game Status
     //
     createGameStatusBar(parent){
-        const statusDiv = createElement("div", {"class": "control-bar"}, [
+        const statusDiv = this.gameStatusDiv = createElement("div", {"class": "control-bar"}, [
             this.statusText = document.createTextNode("")
         ], this.rootElement);
     }
