@@ -796,7 +796,7 @@ class Game{
                 }
                 break;
             case "SZ":
-                boardSize = property.propValues[0].split(":").map(s=>{
+                boardSize = splitSGFCompose(property.propValues[0]).map(s=>{
                     const n = parseInt(s);
                     if(!(n >= 1 && n <= 52)){
                         throw new Error("Invalid board size " + n);
@@ -855,10 +855,12 @@ class Game{
                     case "AB":
                     case "AW":
                     case "AE":
-                        for(const point of pvalues){
-                            const pos = parseSGFMove(point, w, h);
-                            if(isValidPosition(pos, w, h)){
-                                game.setIntersectionStateForced(pos, pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY);
+                        for(const value of pvalues){
+                            const points = parseSGFComposedPoint(value, w, h);
+                            for(const pos of points){
+                                if(isValidPosition(pos, w, h)){
+                                    game.setIntersectionStateForced(pos, pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY);
+                                }
                             }
                         }
                         break;
@@ -1024,7 +1026,54 @@ function parseSGF(sgf){
         return unescapedStr;
     }
 }
-function parseSGFMove(str, w, h){
+function splitSGFCompose(value){
+    // \: => single
+    // \\: => composed
+    let colonPos = -1;
+    for(let i = 0; i < value.length; ++i){
+        switch(value.charAt(i)){
+        case "\\":
+            ++i; //skip next char
+            break;
+        case ":":
+            if(colonPos != -1){
+                throw new Error("Too many colon in compose value : " + value);
+            }
+            colonPos = i;
+            break;
+        }
+    }
+    return colonPos == -1 ? [value] : [value.substring(0, colonPos), value.substring(colonPos+1)];
+}
+function parseSGFComposedPoint(value, w, h){
+    // ex: AB[jk:lm]
+    const values = splitSGFCompose(value);
+    if(values.length == 1){
+        return [parseSGFPoint(values[0], w, h)];
+    }
+    else{
+        const points = [];
+        const lt = parseSGFPointXY(values[0], w, h);
+        const rb = parseSGFPointXY(values[1], w, h);
+        for(let y = lt.y; y <= rb.y; ++y){
+            for(let x = lt.x; x <= rb.x; ++x){
+                points.push(toPosition(x, y, w));
+            }
+        }
+        return points;
+    }
+}
+function parseSGFMove(value, w, h){
+    if(value == "" || (value == "tt" && (w == 19 && h == 19))){
+        return POS_PASS;
+    }
+    return parseSGFPoint(value, w, h);
+}
+function parseSGFPoint(value, w, h){
+    const p = parseSGFPointXY(value, w, h);
+    return toPosition(p.x, p.y, w);
+}
+function parseSGFPointXY(value, w, h){
     function fromLetter(charCode){
         if(charCode >= 0x61 && charCode <= 0x7a){
             return charCode - 0x61;
@@ -1033,26 +1082,21 @@ function parseSGFMove(str, w, h){
             return charCode - 0x41 + 26;
         }
         else{
-            throw new Error("SGF coordinates out of range :" + String.fromCharCode(charCode));
+            throw new Error("Invalid point character :" + String.fromCharCode(charCode));
         }
     }
-    if(str == "" || (str == "tt" && (w == 19 && h == 19))){
-        return POS_PASS;
+    const x = fromLetter(value.charCodeAt(0));
+    const y = fromLetter(value.charCodeAt(1));
+    if(!(x >= 0 && y >= 0 && x < w && y < h)){
+        throw new Error("Out of board : " + value + " (x:" + x + " y:" + y + ")");
     }
-    else{
-        const x = fromLetter(str.charCodeAt(0));
-        const y = fromLetter(str.charCodeAt(1));
-        if(!(x >= 0 && y >= 0 && x < w && y < h)){
-            throw new Error("SGF coordinates out of board :" + str + " (x:" + x + " y:" + y + ")");
-        }
-        return toPosition(x, y, w);
-    }
+    return {x, y};
 }
-function parseSGFText(str){
-    return str.replace(/\\(\n\r?|\r\n?)/gi, "").replace(/\\(.)/gi, "$1").replace(/\t\v/gi, " ");
+function parseSGFText(value){
+    return value.replace(/\\(\n\r?|\r\n?)/gi, "").replace(/\\(.)/gi, "$1").replace(/\t\v/gi, " ");
 }
-function parseSGFSimpleText(str){
-    return str.replace(/\\(\n\r?|\r\n?)/gi, "").replace(/\\(.)/gi, "$1").replace(/(\t|\v|\n\r?|\r\n?)/gi, " ");
+function parseSGFSimpleText(value){
+    return value.replace(/\\(\n\r?|\r\n?)/gi, "").replace(/\\(.)/gi, "$1").replace(/(\t|\v|\n\r?|\r\n?)/gi, " ");
 }
 
 })();
