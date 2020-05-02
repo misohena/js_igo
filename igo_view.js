@@ -261,17 +261,16 @@ class BoardElement{
         const gridInterval = this.gridInterval = opt.gridInterval || 32;
         const gridMargin = this.gridMargin = opt.gridMargin || 50;
 
+        const boardPixelW = this.boardPixelW = this.gridMargin*2+this.gridInterval*(this.w-1);
+        const boardPixelH = this.boardPixelH = this.gridMargin*2+this.gridInterval*(this.h-1);
+
         const rootElement = this.rootElement = this.element = createSVG(
-            "svg",
-            {
-                "class": "board",
-                width: gridMargin*2+gridInterval*(w-1),
-                height: gridMargin*2+gridInterval*(h-1)
-            },
+            "svg", {"class": "board"},
             [
-                createSVG("rect",{width:"100%", height:"100%", fill:"#e3aa4e"}),
+                createSVG("rect",{x:0, y:0, width:boardPixelW, height:boardPixelH, fill:"#e3aa4e"}),
                 this.defineStoneGradient()
             ]);
+        this.clearViewport(); //set width=, height=
 
         const gridRoot = this.gridRoot = createSVG("g", {
             "class":"board-grid-root",
@@ -332,9 +331,12 @@ class BoardElement{
 
     convertEventPosition(event){
         const bcr = this.rootElement.getBoundingClientRect();
+        const xOnElement = event.clientX - bcr.left;
+        const yOnElement = event.clientY - bcr.top;
+        ///@todo support scaling
         // coordinates for this.rootElement
-        const rootX = event.clientX - bcr.left;
-        const rootY = event.clientY - bcr.top;
+        const rootX = this.viewport.left + xOnElement;
+        const rootY = this.viewport.top + yOnElement;
         // coordinates for this.gridRoot, this.shadows, this.stones, this.overlays
         const gridX = rootX - this.gridMargin;
         const gridY = rootY - this.gridMargin;
@@ -474,6 +476,36 @@ class BoardElement{
         }
         return elem;
     }
+
+    setViewport(x1, y1, x2, y2){
+        const l = Math.min(Math.max(Math.min(x1, x2), 0), this.w-1);
+        const t = Math.min(Math.max(Math.min(y1, y2), 0), this.h-1);
+        const r = Math.min(Math.max(Math.max(x1, x2), 0), this.w-1);
+        const b = Math.min(Math.max(Math.max(y1, y2), 0), this.h-1);
+
+        const left   = Math.floor(this.gridMargin + this.gridInterval * l - (l == 0 ? this.gridMargin : this.gridInterval*0.5));
+        const top    = Math.floor(this.gridMargin + this.gridInterval * t - (t == 0 ? this.gridMargin : this.gridInterval*0.5));
+        const right  = Math.ceil(this.gridMargin + this.gridInterval * r + (r == this.w-1 ? this.gridMargin : this.gridInterval*0.5));
+        const bottom = Math.ceil(this.gridMargin + this.gridInterval * b + (b == this.h-1 ? this.gridMargin : this.gridInterval*0.5));
+
+        const width = (right - left);
+        const height = (bottom - top);
+        const viewBox = left + "," + top + "," + width + "," + height;
+
+        this.rootElement.setAttributeNS(null, "viewBox", viewBox);
+        this.rootElement.setAttributeNS(null, "width", width);
+        this.rootElement.setAttributeNS(null, "height", height);
+
+        this.viewport = {left, top, right, bottom, width, height};
+    }
+    clearViewport(){
+        const width = this.boardPixelW;
+        const height = this.boardPixelH;
+        this.rootElement.removeAttributeNS(null, "viewBox");
+        this.rootElement.setAttributeNS(null, "width", width);
+        this.rootElement.setAttributeNS(null, "height", height);
+        this.viewport = {left:0, top:0, right:width, bottom:height, width, height};
+    }
 }
 igo.BoardElement = BoardElement;
 
@@ -524,6 +556,8 @@ class GameView{
         };
 
         this.createPreviewStone();
+
+        this.updateViewport();
 
         // Move Controller
         this.createMoveController();
@@ -796,6 +830,32 @@ class GameView{
         this.boardElement.element.addEventListener("touchcancel", hide, false);
     }
 
+    updateViewport(){
+        const move = this.model.history.getCurrentMove();
+        if(move && move.sgfProps){
+            const points = move.sgfProps["VW"];
+            if(points){
+                let minX = this.model.board.w - 1;
+                let minY = this.model.board.h - 1;
+                let maxX = 0;
+                let maxY = 0;
+                for(const point of points.value){
+                    const x = this.model.board.toX(point);
+                    const y = this.model.board.toY(point);
+                    if(x < minX){minX = x;}
+                    if(y < minY){minY = y;}
+                    if(x > maxX){maxX = x;}
+                    if(y > maxY){maxY = y;}
+                }
+                if(minX <= maxX && minY <= maxY){
+                    this.boardElement.setViewport(minX, minY, maxX, maxY);
+                }
+                else{
+                    this.boardElement.clearViewport();
+                }
+            }
+        }
+    }
 
     //
     // Game Status

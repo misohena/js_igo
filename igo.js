@@ -485,6 +485,14 @@ class HistoryTree{
             this.pointer.comment = text;
         }
     }
+    setSGFPropertyToCurrentMove(id, value, inherit){
+        if(this.pointer){
+            if(!this.pointer.sgfProps){
+                this.pointer.sgfProps = {};
+            }
+            this.pointer.sgfProps[id] = {value, inherit};
+        }
+    }
 
     pushPass(koPosOld){
         this.push(POS_PASS, null, koPosOld, NPOS);
@@ -878,6 +886,13 @@ class Game{
                     // Node Annotation Properties
                     case "C":
                         game.setCommentToCurrentMove(parseSGFText(pvalues[0]));
+                        break;
+                    // Miscellaneous Properties
+                    case "VW":
+                        {
+                            const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
+                            game.history.setSGFPropertyToCurrentMove("VW", points, true); //inherit (to subsequences, subtrees)
+                        }
                         break;
                     }
                 }
