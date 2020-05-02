@@ -191,17 +191,18 @@ class BoardElement{
         const gridInterval = this.gridInterval = opt.gridInterval || 32;
         const gridMargin = this.gridMargin = opt.gridMargin || 50;
 
-        const rootElement = this.rootElement = this.element = createSVG("svg", {width:gridMargin*2+gridInterval*(w-1), height:gridMargin*2+gridInterval*(h-1)});
+        const rootElement = this.rootElement = this.element = createSVG("svg", {"class":"board", width:gridMargin*2+gridInterval*(w-1), height:gridMargin*2+gridInterval*(h-1)});
         createSVG("rect", {width:"100%", height:"100%", fill:"#e3aa4e"}, rootElement);
         this.defineStoneGradient(rootElement);
 
-        const rootGroup = createSVG("g", {
+        const gridRoot = this.gridRoot = createSVG("g", {
+            "class":"board-grid-root",
             transform:"translate(" + (gridMargin-0.5) + " " + (gridMargin-0.5) + ")", //adjust pixel coordinates for sharper lines
             style:"pointer-events:none;"
         }, rootElement);
 
         // Grid
-        const grid = createSVG("g", {"class":"grid"}, rootGroup);
+        const grid = createSVG("g", {"class":"board-grid"}, gridRoot);
 
             // Lines
         const lineWidth = 1;
@@ -244,9 +245,9 @@ class BoardElement{
             this.intersections[pos] = {state:EMPTY, elements:null};
         }
 
-        this.shadows = createSVG("g", {"class":"shadows"}, rootGroup);
-        this.stones = createSVG("g", {"class":"stones"}, rootGroup);
-        this.overlays = createSVG("g", {"class":"overlays"}, rootGroup);
+        this.shadows = createSVG("g", {"class":"board-shadows"}, gridRoot);
+        this.stones = createSVG("g", {"class":"board-stones"}, gridRoot);
+        this.overlays = createSVG("g", {"class":"board-overlays"}, gridRoot);
     }
 
     defineStoneGradient(svg){
