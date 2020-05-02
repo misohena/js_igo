@@ -786,7 +786,7 @@ class Game{
 
         // Parse root node
         const rootNode = rootTree.nodes[0];
-        let boardSize;
+        let boardSize = [19];
         for(let i = 0; i < rootNode.length; ++i){
             const property = rootNode[i];
             switch(property.propIdent){
@@ -808,47 +808,75 @@ class Game{
         }
 
         // Create Game object
-        if( ! boardSize){
-            throw new Error("Unspecified board size");
-        }
         const w = boardSize[0];
         const h = boardSize.length >= 2 ? boardSize[1] : w;
         const game = new Game(w, h);
 
         // represent all moves & create history tree
-        processTree(rootTree, 1);
+        processTree(rootTree, 0);
         return game;
 
-        function fromLetter(charCode){
-            if(charCode >= 0x61 && charCode <= 0x7a){
-                return charCode - 0x61;
-            }
-            else if(charCode >= 0x41 && charCode <= 0x5a){
-                return charCode - 0x41 + 26;
-            }
-            else{
-                throw new Error("SGF coordinates out of range :" + String.fromCharCode(charCode));
-            }
-        }
         function processTree(tree, startIndex){
-            // put moves
             for(let ni = startIndex; ni < tree.nodes.length; ++ni){
                 const nodeProps = tree.nodes[ni];
+                // process node
+                let moved = false;
                 for(const prop of nodeProps){
                     const pid = prop.propIdent;
                     const pvalues = prop.propValues;
-                    if(pid == "B" || pid == "W"){
-                        const point = pvalues[0];
-                        if(point == "" || (point == "tt" && boardSize <= 19)){
-                            game.pass();
-                        }
-                        else{
-                            const x = fromLetter(point.charCodeAt(0));
-                            const y = fromLetter(point.charCodeAt(1));
-                            if(!game.putStone(game.board.toPosition(x, y))){
-                                throw new Error("SGF includes a illegal move at " + point);
+                    switch(pid){
+                    // Move Properties
+                    case "B":
+                    case "W":
+                        {
+                            if(moved){
+                                throw new Error("Moved twice in a node");
+                            }
+                            moved = true;
+                            const move = pvalues[0];
+                            const color = pid == "B" ? BLACK : WHITE;
+                            if(game.getTurn() != color){
+                                if( ! game.setFirstTurn(color)){ //first move only
+                                    throw new Error("Unexpected player change " + pid + " " + move);
+                                }
+                            }
+                            const pos = parseSGFMove(move, w, h);
+                            if(pos == POS_PASS){
+                                game.pass();
+                            }
+                            else{
+                                if(!game.putStone(pos)){
+                                    throw new Error("SGF includes a illegal move at " + move);
+                                }
                             }
                         }
+                        break;
+                    // Setup Properties
+                    case "AB":
+                    case "AW":
+                    case "AE":
+                        {
+                            const pos = parseSGFMove(pvalues[0], w, h);
+                            if(isValidPosition(pos, w, h)){
+                                game.setIntersectionStateForced(pos, pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY);
+                            }
+                        }
+                        break;
+                    case "PL":
+                        {
+                            const color = pvalues[0] == "B" ? BLACK : pvalues[0] == "W" ? WHITE : EMPTY;
+                            if(color == EMPTY){
+                                throw new Error("Invalid color " + pid + " " + pvalues[0]);
+                            }
+                            if( ! game.setFirstTurn(color)){ //first move only
+                                throw new Error("Unexpected player change by PL");
+                            }
+                        }
+                        break;
+                    // Node Annotation Properties
+                    case "C":
+                        game.setCommentToCurrentMove(parseSGFText(pvalues[0]));
+                        break;
                     }
                 }
             }
@@ -995,6 +1023,36 @@ function parseSGF(sgf){
         }
         return unescapedStr;
     }
+}
+function parseSGFMove(str, w, h){
+    function fromLetter(charCode){
+        if(charCode >= 0x61 && charCode <= 0x7a){
+            return charCode - 0x61;
+        }
+        else if(charCode >= 0x41 && charCode <= 0x5a){
+            return charCode - 0x41 + 26;
+        }
+        else{
+            throw new Error("SGF coordinates out of range :" + String.fromCharCode(charCode));
+        }
+    }
+    if(str == "" || (str == "tt" && (w == 19 && h == 19))){
+        return POS_PASS;
+    }
+    else{
+        const x = fromLetter(str.charCodeAt(0));
+        const y = fromLetter(str.charCodeAt(1));
+        if(!(x >= 0 && y >= 0 && x < w && y < h)){
+            throw new Error("SGF coordinates out of board :" + str + " (x:" + x + " y:" + y + ")");
+        }
+        return toPosition(x, y, w);
+    }
+}
+function parseSGFText(str){
+    return str.replace(/\\(\n\r?|\r\n?)/gi, "").replace(/\\(.)/gi, "$1").replace(/\t\v/gi, " ");
+}
+function parseSGFSimpleText(str){
+    return str.replace(/\\(\n\r?|\r\n?)/gi, "").replace(/\\(.)/gi, "$1").replace(/(\t|\v|\n\r?|\r\n?)/gi, " ");
 }
 
 })();
