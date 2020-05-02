@@ -28,8 +28,9 @@ igo.getColorIndex = getColorIndex;
 //
 // Position
 //
-function isIntersectionPosition(pos)
-    {return pos >= 0;}
+function isIntersectionPosition(pos){return pos >= 0;}
+function isValidPosition(pos, w, h){return pos >= 0 && pos < w * h;}
+function toPosition(x, y, w){return x + y * w;}
 
 //
 // 2-bits array
@@ -96,13 +97,13 @@ class Board{
     // Position(index of intersections)
 
     toPosition(x, y)
-        {return x + y * this.w;}
+        {return toPosition(x, y, this.w);}
     toX(pos)
         {return pos % this.w;}
     toY(pos)
         {return pos / this.w | 0;}
     isValidPosition(pos)
-        {return pos != NPOS && pos >= 0 && pos < this.w * this.h;}
+        {return pos != NPOS && isValidPosition(pos, this.w, this.h);}
     leftOf(pos)
         {return pos == NPOS || (pos % this.w) == 0 ? NPOS : pos - 1;}
     rightOf(pos)
@@ -477,6 +478,7 @@ class HistoryTree{
     getNextMoves(){return this.pointer.nexts;}
     getPreviousMove(){return this.pointer.prev;}
     getFirstMoves(){return this.first.nexts;}
+    getRootMove(){return this.first;}
 
     setCommentToCurrentMove(text){
         if(this.pointer){
@@ -625,6 +627,7 @@ class Game{
         this.board = new Board(w, h);
 //        this.history = new History();
         this.history = new HistoryTree();
+        this.firstTurn = BLACK;
     }
 
     // Finished & Winner
@@ -643,6 +646,29 @@ class Game{
     // Board
     getTurn(){return this.board.getTurn();}
     getPrisoners(color){return this.board.getPrisoners(color);}
+    setFirstTurn(color){
+        if(this.getMoveNumber() > 0){
+            return false; //途中で変えるのは不正
+        }
+        if(!isValidColor(color)){
+            return false;
+        }
+        this.firstTurn = color;
+        this.board.setTurn(color);
+        return true;
+    }
+    getFirstTurn(){
+        return this.firstTurn;
+    }
+    setIntersectionStateForced(pos, state){
+        if(this.getMoveNumber() > 0){
+            return false; //途中で変えるのは不正
+        }
+        if(this.board.isValidPosition(pos)){
+            this.board.setAt(pos, state);
+        }
+        return true;
+    }
 
     pass(){
         if( ! this.finished){
@@ -696,7 +722,26 @@ class Game{
             }
         }
 
+        // Root Node
+        let rootNode = ";" +
+            "GM[1]" +
+            "SZ[" + (this.board.w == this.board.h ? this.board.w : this.board.w + ":" + this.board.h) + "]" +
+            (this.firstTurn == WHITE ? "PL[W]" : "") +
+            (this.history.getRootMove().comment ? "C[" + this.history.getRootMove().comment + "]" : "");
+        this.undoAll(); ///@todo できれば変えたくない。
+        for(let pos = 0; pos < this.board.getIntersectionCount(); ++pos){
+            const intersection = this.board.getAt(pos);
+            if(intersection == BLACK || intersection == WHITE){
+                rootNode += "A" + (intersection == BLACK ? "B" : "W") + "[" +
+                    toLetter(this.board.toX(pos)) +
+                    toLetter(this.board.toY(pos)) + "]";
+            }
+        }
+
+        //
         let str = "";
+        let moveNumber = 0;
+        let turn = this.firstTurn;
         this.history.visitAllMoves(
             (move,indexSiblings,numSiblings,level)=>{ //enter
                 if(move.pos == POS_RESIGN){
@@ -708,12 +753,17 @@ class Game{
                 str += ";";
                 if(move.pos != NPOS){
                     str +=
-                        (level&1 ? "W" : "B") +
+                        (turn == BLACK ? "B" : "W") +
                         "[" +
                         (move.pos == POS_PASS ? "" :
                          toLetter(this.board.toX(move.pos)) +
                          toLetter(this.board.toY(move.pos))) +
                         "]";
+                    ++moveNumber;
+                    turn = getOppositeColor(turn);
+                }
+                if(move.comment){
+                    str += "C[" + move.comment + "]";
                 }
             },
             (move,indexSiblings,numSiblings,level)=>{ //leave
@@ -723,11 +773,11 @@ class Game{
                 if(numSiblings > 1){
                     str += ")";
                 }
+                --moveNumber;
+                turn = getOppositeColor(turn);
             },
         );
-        return "(;GM[1]" +
-            "SZ[" + (this.board.w == this.board.h ? this.board.w : this.board.w + ":" + this.board.h) + "]" +
-            str + ")";
+        return "(" + rootNode + str + ")";
     }
 
     static fromSGF(str){

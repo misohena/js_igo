@@ -10,6 +10,7 @@ const NPOS = igo.NPOS;
 const POS_PASS = igo.POS_PASS;
 const POS_RESIGN = igo.POS_RESIGN;
 const Game = igo.Game;
+const getOppositeColor = igo.getOppositeColor;
 
 //
 // HTML UI Utilities
@@ -172,6 +173,39 @@ function createCheckbox(parent, text, checked, onChange){
     return label;
 }
 
+function createRadioButtons(parent, name, items, onChange){
+    const inputs = [];
+    for(const item of items){
+        const label = createElement("label", {}, parent);
+        const input = createElement("input", {type:"radio", name, value:item.value}, label);
+        if(item.checked){
+            input.checked = true;
+        }
+        input.addEventListener('change', onChangeItem, false);
+        label.appendChild(document.createTextNode(item.text));
+        inputs.push(input);
+    }
+    function onChangeItem(e){
+        const checkedInput = inputs.find(i=>i.checked);
+        if(checkedInput){
+            onChange(checkedInput.value);
+        }
+    }
+    function getByValue(value){
+        return inputs.find(i=>i.value == value);
+    }
+    function selectByValue(value){
+        const item = getByValue(value);
+        if(item){
+            item.checked = true;
+        }
+    }
+    return {
+        getByValue,
+        selectByValue
+    };
+}
+
 
 
 //
@@ -293,18 +327,20 @@ class BoardElement{
         // stone
         const fill = color == BLACK ? "url(#stone-black)" : "url(#stone-white)";
         const stone = createSVG("circle", {cx, cy, r, fill, style:"cursor:pointer;"});
+        stone.stoneData = {x, y, color};
 
         return {stone, shadow};
     }
     createStoneOnIntersection(x, y, color){
         const elements = this.createStone(x, y, color);
         elements.stone.style.pointerEvents = "auto";
-        elements.stone.addEventListener("mousemove", e=>e.stopPropagation(), false);
-        elements.stone.addEventListener("click", e=>{
-            if(this.onStoneClick){
-                this.onStoneClick(x, y, e);
+        const dispatcher = e=>{
+            if(this.onStoneEvent){
+                this.onStoneEvent(x, y, e);
             }
-        }, false);
+        };
+        elements.stone.addEventListener("mousemove", dispatcher, false);
+        elements.stone.addEventListener("click", dispatcher, false);
         return elements;
     }
     putStone(x, y, color){
@@ -349,14 +385,12 @@ class BoardElement{
             intersection.state = EMPTY;
         }
     }
-    setByBoard(board, rotate180){
-        for(let y = 0; y < board.h; ++y){
-            for(let x = 0; x < board.w; ++x){
+    setAllIntersections(getter){
+        for(let y = 0; y < this.h; ++y){
+            for(let x = 0; x < this.w; ++x){
                 this.setIntersectionState(
                     x, y,
-                    board.getAt(board.toPosition(
-                        rotate180 ? board.w - 1 - x : x,
-                        rotate180 ? board.h - 1 - y : y)));
+                    getter(x, y));
             }
         }
     }
@@ -406,6 +440,8 @@ class GameView{
         const w = this.w = this.model.board.w;
         const h = this.h = this.model.board.h;
 
+        this.mode = null;
+
         // Recreate Root Element
         if(this.rootElement){
             this.rootElement.parentNode.removeChild(this.rootElement);
@@ -422,63 +458,34 @@ class GameView{
         rootElement.appendChild(boardElement.element);
 
         boardElement.onIntersectionClick = (x, y, e)=>{
-            this.onIntersectionClick(this.toBoardPosition(x, y), e);
+            this.onIntersectionClick(this.toModelPosition(x, y), e);
         };
 
-        boardElement.onStoneClick = (x, y, e)=>{
-            this.onStoneClick(this.toBoardPosition(x, y), e);
+        boardElement.onStoneEvent = (x, y, e)=>{
+            this.onStoneEvent(this.toModelPosition(x, y), e);
         };
 
-            // Preview Stone
-        const self = this;
-        const previewStoneBlack = boardElement.createStone(0, 0, BLACK).stone;
-        const previewStoneWhite = boardElement.createStone(0, 0, WHITE).stone;
-        let currentPreviewStone = null;
-        previewStoneBlack.setAttributeNS(null, "opacity", 0.75);
-        previewStoneWhite.setAttributeNS(null, "opacity", 0.75);
-        function showPreviewStone(){
-            if(!currentPreviewStone){
-                currentPreviewStone = game.getTurn() == BLACK ? previewStoneBlack : previewStoneWhite;
-                boardElement.stones.appendChild(currentPreviewStone);
-            }
-        }
-        function hidePreviewStone(){
-            if(currentPreviewStone){
-                currentPreviewStone.parentNode.removeChild(currentPreviewStone);
-                currentPreviewStone = null;
-            }
-        }
-        function controlPreviewStone(e){
-            const eventPos = boardElement.convertEventPosition(e);
-            if(!game.isFinished() &&
-               eventPos.x >= 0 && eventPos.y >= 0 &&
-               eventPos.x < w && eventPos.y < h &&
-               game.board.getAt(self.toBoardPosition(eventPos.x, eventPos.y)) == EMPTY){
-
-                showPreviewStone();
-                currentPreviewStone.setAttributeNS(null, "cx", eventPos.gridX);
-                currentPreviewStone.setAttributeNS(null, "cy", eventPos.gridY);
-            }
-            else{
-                hidePreviewStone();
-            }
-        }
-        boardElement.element.addEventListener("mousemove", controlPreviewStone, false);
-        boardElement.element.addEventListener("mouseout", hidePreviewStone, false);
-        boardElement.element.addEventListener("click", controlPreviewStone, false);
+        this.createPreviewStone();
 
         // Move Controller
-        const moveDiv = createElement("div", {"class": "control-bar"}, rootElement);
-        createButton(moveDiv, "メニュー", (e)=>this.onMenuButtonClick(e));
-        createButton(moveDiv, "パス", ()=>this.onPassButtonClick());
-        createButton(moveDiv, "投了", ()=>this.onResignButtonClick());
-        //createButton(moveDiv, "分析", ()=>this.onAnalyzeButtonClick());
+        this.createMoveController();
 
         // History Controller
         this.createHistoryController();
         this.createCommentTextArea();
 
         this.update();
+
+        this.startMoveMode();
+    }
+
+    hideMainUI(){
+        this.moveController.style.display = "none";
+        this.historyController.style.display = "none";
+    }
+    showMainUI(){
+        this.moveController.style.display = "";
+        this.historyController.style.display = "";
     }
 
     onMenuButtonClick(e){
@@ -486,7 +493,8 @@ class GameView{
             {text:"初期化", handler:()=>this.openResetDialog()},
             {text:"SGFインポート", handler:()=>this.importSGF()},
             {text:"SGFエクスポート", handler:()=>this.exportSGF()},
-            {text:"コメント設定", handler:()=>this.setCommentToCurrentMove()}
+            {text:"コメント設定", handler:()=>this.setCommentToCurrentMove()},
+            {text:"フリー編集", handler:()=>this.startFreeEditMode()}
         ], document.body, e.clientX, e.clientY);
     }
 
@@ -541,19 +549,33 @@ class GameView{
         }
     }
 
-    toBoardPosition(x, y){
-        return this.model.board.toPosition(
-            this.rotate180 ? this.model.board.w - 1 - x : x,
-            this.rotate180 ? this.model.board.h - 1 - y : y);
+
+    //
+    // Mode
+    //
+
+    startMode(mode){
+        this.endMode();
+        this.mode = mode;
+        this.mode.start();
     }
-    toBoardX(pos){
-        const x = this.model.board.toX(pos);
-        return this.rotate180 ? this.model.board.w - 1 - x : x;
+    endMode(){
+        if(this.mode){
+            this.mode.end();
+            this.mode = null;
+        }
     }
-    toBoardY(pos){
-        const y = this.model.board.toY(pos);
-        return this.rotate180 ? this.model.board.h - 1 - y : y;
+    pushMode(mode){
+        if(!this.modeStack){
+            this.modeStack = [];
+        }
+        this.modeStack.push(this.mode);
+        this.startMode(mode);
     }
+    popMode(){
+        this.startMode(this.modeStack.pop());
+    }
+
 
     //
     // Update Contents
@@ -572,13 +594,57 @@ class GameView{
     // Board Control
     //
 
-    updateBoard(){
-        this.boardElement.setByBoard(this.model.board, this.rotate180);
+    toModelPosition(x, y){
+        return this.model.board.toPosition(
+            this.rotate180 ? this.model.board.w - 1 - x : x,
+            this.rotate180 ? this.model.board.h - 1 - y : y);
+    }
+    toBoardElementX(pos){
+        const x = this.model.board.toX(pos);
+        return this.rotate180 ? this.model.board.w - 1 - x : x;
+    }
+    toBoardElementY(pos){
+        const y = this.model.board.toY(pos);
+        return this.rotate180 ? this.model.board.h - 1 - y : y;
     }
 
-    onIntersectionClick(pos, e){this.putStone(pos);}
-    onPassButtonClick(){this.pass();}
-    onResignButtonClick(){this.resign();}
+    updateBoard(){
+        this.boardElement.setAllIntersections(
+            (x, y)=>((x >= 0 && y >= 0 && x < this.w && y < this.h) ?
+                     this.model.board.getAt(this.toModelPosition(x, y)) : EMPTY));
+    }
+
+    updateIntersection(pos){
+        if(this.model.board.isValidPosition(pos)){
+            this.boardElement.setIntersectionState(
+                this.toBoardElementX(pos),
+                this.toBoardElementY(pos),
+                this.model.board.getAt(pos));
+        }
+    }
+
+    onIntersectionClick(pos, e){
+        if(this.mode){
+            if(this.mode.onIntersectionClick){
+                this.mode.onIntersectionClick(pos, e);
+            }
+        }
+    }
+    onStoneEvent(pos, e){
+        if(this.mode){
+            if(this.mode.onStoneEvent){
+                this.mode.onStoneEvent(pos, e);
+            }
+        }
+    }
+
+    createMoveController(){
+        const moveDiv = this.moveController = createElement("div", {"class": "control-bar"}, this.rootElement);
+        createButton(moveDiv, "メニュー", (e)=>this.onMenuButtonClick(e));
+        createButton(moveDiv, "パス", ()=>this.pass());
+        createButton(moveDiv, "投了", ()=>this.resign());
+        //createButton(moveDiv, "分析", ()=>this.onAnalyzeButtonClick());
+    }
 
     putStone(pos){
         if(this.model.putStone(pos)){
@@ -602,13 +668,58 @@ class GameView{
     //    alert(cognition.toStr());
     //}
 
-    onStoneClick(pos, e){
-        e.stopPropagation();
-        if(!this.model.board.isEmpty(pos)){
-            createPopupMenu([
-                {text:"この手まで戻る", handler:()=>this.backToMove(pos)}
-            ], document.body, e.clientX, e.clientY);
+    createPreviewStone(){
+        class PreviewStone{
+            constructor(boardElement){
+                this.boardElement = boardElement;
+                this.black = boardElement.createStone(0, 0, BLACK).stone;
+                this.white = boardElement.createStone(0, 0, WHITE).stone;
+                this.black.setAttributeNS(null, "opacity", 0.75);
+                this.white.setAttributeNS(null, "opacity", 0.75);
+                this.current = null;
+            }
+            show(color){
+                if(!this.current){
+                    this.current =
+                        color == BLACK ? this.black :
+                        color == WHITE ? this.white : null;
+                    if(this.current){
+                        this.boardElement.stones.appendChild(this.current);
+                    }
+                }
+            }
+            setPosition(x, y){
+                this.current.setAttributeNS(null, "cx", x);
+                this.current.setAttributeNS(null, "cy", y);
+            }
+            hide(){
+                if(this.current){
+                    this.current.parentNode.removeChild(this.current);
+                    this.current = null;
+                }
+            }
         }
+        this.previewStone = new PreviewStone(this.boardElement);
+
+        function controlPreviewStone(e){
+            const eventPos = this.boardElement.convertEventPosition(e);
+            if(eventPos.x >= 0 && eventPos.y >= 0 &&
+               eventPos.x < this.w && eventPos.y < this.h){
+                const color =
+                      (this.mode && this.mode.getPreviewStoneColor) ?
+                          this.mode.getPreviewStoneColor(eventPos.x, eventPos.y) :
+                          EMPTY;
+                if(color != EMPTY){
+                    this.previewStone.show(color);
+                    this.previewStone.setPosition(eventPos.gridX, eventPos.gridY);
+                    return;
+                }
+            }
+            this.previewStone.hide();
+        }
+        this.boardElement.element.addEventListener("mousemove", e=>controlPreviewStone.call(this, e), false);
+        this.boardElement.element.addEventListener("mouseout", e=>this.previewStone.hide(), false);
+        this.boardElement.element.addEventListener("click", e=>controlPreviewStone.call(this, e), false);
     }
 
 
@@ -712,12 +823,12 @@ class GameView{
                   move.pos == NPOS ? this.w-5 :
                   move.pos == POS_PASS ? this.w-3 :
                   move.pos == POS_RESIGN ? this.w-1 :
-                  this.toBoardX(move.pos);
+                  this.toBoardElementX(move.pos);
             const y =
                   move.pos == NPOS ? this.h :
                   move.pos == POS_PASS ? this.h :
                   move.pos == POS_RESIGN ? this.h :
-                  this.toBoardY(move.pos);
+                  this.toBoardElementY(move.pos);
             const branchElem = this.boardElement.createOverlayText(
                 x, y, text, fill,
                 e=>this.onBranchTextClick(move.pos, e),
@@ -833,6 +944,183 @@ class GameView{
     setCommentToCurrentMove(){
         this.model.setCommentToCurrentMove("");
         this.updateCommentTextArea();
+    }
+
+    //
+    // Move Mode
+    //
+    startMoveMode(){
+        const gameView = this;
+        class MoveMode{
+            constructor(){
+                this.alive = false;
+            }
+            start(){
+                if(!this.alive){
+                    this.alive = true;
+                }
+            }
+            end(){
+                if(this.alive){
+                    this.alive = false;
+                }
+            }
+            onIntersectionClick(pos, e){
+                gameView.putStone(pos);
+            }
+            onStoneEvent(pos, e){
+                switch(e.type){
+                case "click":
+                    e.stopPropagation();
+                    if( ! gameView.model.board.isEmpty(pos)){
+                        createPopupMenu([
+                            {text:"この手まで戻る", handler:()=>gameView.backToMove(pos)}
+                        ], document.body, e.clientX, e.clientY);
+                    }
+                    break;
+                case "mousemove":
+                    e.stopPropagation(); //prevent preview stone
+                    break;
+                }
+            }
+            getPreviewStoneColor(x, y){
+                return !gameView.model.isFinished() && gameView.model.board.getAt(gameView.toModelPosition(x, y)) == EMPTY ? gameView.model.getTurn() : EMPTY;
+            }
+        }
+        this.startMode(new MoveMode());
+    }
+
+    //
+    // Free Edit Mode
+    //
+    startFreeEditMode(){
+        if(this.model.getMoveNumber() != 0){
+            alert("フリー編集モードは最初の盤面でのみ使用出来ます。");
+            return;
+        }
+
+        const gameView = this;
+        class FreeEditMode{
+            constructor(){
+                this.alive = false;
+            }
+            start(){
+                if(!this.alive){
+                    this.alive = true;
+                    this.color = BLACK;
+                    this.drawing = false;
+                    this.createController();
+                    this.hookMouseEvent();
+                    this.alternately = false;
+                    gameView.hideMainUI();
+                }
+            }
+            end(){
+                if(this.alive){
+                    this.alive = false;
+                    this.unhookMouseEvent();
+                    this.controlBar.parentNode.removeChild(this.controlBar);
+                    gameView.showMainUI();
+                }
+            }
+
+            getPreviewStoneColor(x, y){
+                return this.color;
+            }
+
+            createController(){
+                const bar = this.controlBar = createElement("div", {
+                    "class":"free-edit control-bar"
+                }, gameView.rootElement);
+                createCheckbox(bar, "交互", this.alternately, (e)=>{
+                    this.alternately = !this.alternately;
+                });
+                this.colorSelector = createRadioButtons(
+                    bar, "free-edit-color",
+                    [
+                        {value:BLACK, text:"黒", checked:true},
+                        {value:WHITE, text:"白"},
+                        {value:EMPTY, text:"空"},
+                    ],
+                    value=>{
+                        const color = parseInt(value);
+                        if(color == BLACK || color == WHITE || color == EMPTY){
+                            this.color = color;
+                        }
+                    });
+                createButton(bar, "終了", ()=>{gameView.popMode();});
+                createCheckbox(bar, "白先", gameView.model.getFirstTurn() == WHITE, (e)=>{
+                    gameView.model.setFirstTurn(e.target.checked ? WHITE : BLACK);
+                });
+            }
+            hookMouseEvent(){
+                gameView.boardElement.element.addEventListener("mousedown", this.onMouseDownThis = e=>this.onMouseDown(e), false);
+                gameView.boardElement.element.addEventListener("mouseup", this.onMouseUpThis = e=>this.onMouseUp(e), false);
+                gameView.boardElement.element.addEventListener("mousemove", this.onMouseMoveThis = e=>this.onMouseMove(e), false);
+                gameView.boardElement.element.addEventListener("mouseleave", this.onMouseLeaveThis = e=>this.onMouseLeave(e), false);
+            }
+            unhookMouseEvent(){
+                gameView.boardElement.element.removeEventListener("mousedown", this.onMouseDownThis, false);
+                gameView.boardElement.element.removeEventListener("mouseup", this.onMouseUpThis, false);
+                gameView.boardElement.element.removeEventListener("mousemove", this.onMouseMoveThis, false);
+                gameView.boardElement.element.removeEventListener("mouseleave", this.onMouseLeaveThis, false);
+            }
+
+            // Mouse Event Handlers
+            onMouseDown(e){
+                e.stopPropagation();
+                e.preventDefault();
+                this.startDrawing();
+                this.paint(e);
+            }
+            onMouseUp(e){
+                e.stopPropagation();
+                e.preventDefault();
+                this.endDrawing();
+            }
+            onMouseLeave(e){
+                e.stopPropagation();
+                this.endDrawing();
+            }
+            onMouseMove(e){
+                e.stopPropagation();
+                e.preventDefault();
+                if(this.drawing){
+                    this.paint(e);
+                }
+            }
+            // Drawing
+            startDrawing(){
+                if(!this.drawing){
+                    this.drawing = true;
+                }
+            }
+            endDrawing(){
+                if(this.drawing){
+                    this.drawing = false;
+                    if(this.alternately){
+                        const newColor = getOppositeColor(this.color);
+                        if(newColor != this.color){
+                            this.colorSelector.selectByValue(newColor);
+                            this.color = newColor;
+                        }
+                    }
+                }
+            }
+            paint(e){
+                if(this.drawing){
+                    const eventPos = gameView.boardElement.convertEventPosition(e);
+                    const x = eventPos.x;
+                    const y = eventPos.y;
+                    if(x >= 0 && y >= 0 && x < gameView.boardElement.w && y < gameView.boardElement.h){
+                        const pos = gameView.toModelPosition(x, y);
+                        gameView.model.board.setAt(pos, this.color);
+                        gameView.updateIntersection(pos);
+                    }
+                }
+            }
+        }
+        this.pushMode(new FreeEditMode(this));
     }
 };
 igo.GameView = GameView;
