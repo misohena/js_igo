@@ -16,32 +16,53 @@ const getOppositeColor = igo.getOppositeColor;
 // HTML UI Utilities
 //
 
-function createSVG(elemName, attrs, parent){
-    const elem = document.createElementNS("http://www.w3.org/2000/svg", elemName);
+function appendChildren(element, children){
+    if(Array.isArray(children)){
+        for(const child of children){
+            appendChildren(element, child);
+        }
+    }
+    else if(children instanceof Node){
+        element.appendChild(children);
+    }
+    else if(typeof(children) == "string"){
+        //element.insertAdjacentHTML("beforeend", children);
+        element.appendChild(document.createTextNode(children));
+    }
+    return element;
+}
+
+function createElementNS(ns, elemName, attrs, children, parent){
+    const elem = ns ?
+          document.createElementNS(ns, elemName) :
+          document.createElement(elemName);
     for(const attr in attrs){
         elem.setAttributeNS(null, attr, attrs[attr]);
     }
+    appendChildren(elem, children);
     if(parent){
         parent.appendChild(elem);
     }
     return elem;
 }
 
-function createElement(elemName, attrs, parent){
-    const elem = document.createElement(elemName);
-    for(const attr in attrs){
-        elem.setAttribute(attr, attrs[attr]);
-    }
-    if(parent){
-        parent.appendChild(elem);
-    }
-    return elem;
+function createSVG(elemName, attrs, children, parent){
+    return createElementNS("http://www.w3.org/2000/svg", elemName, attrs, children, parent);
 }
 
-function createDialogWindow(parent){
+function createElement(elemName, attrs, children, parent){
+    return createElementNS(null, elemName, attrs, children, parent);
+}
+
+function createDialogWindow(attrs, children, parent){
     parent = parent || document.body;
-    const dialog = createElement("div", {
-        style: "user-select:none;"+
+    if(!attrs){
+        attrs = {};
+    }
+    attrs["class"] += " dialog-window";
+    if(attrs.style === undefined){
+        attrs.style =
+            "user-select:none;"+
             "border: 1px solid black;"+
             "background-color:rgba(250, 250, 250, 0.8);"+
             "position:fixed;"+
@@ -49,8 +70,9 @@ function createDialogWindow(parent){
             "top:1em;"+
             "box-sizing: border-box;"+
             "max-width:90%;"+
-            "padding:1em 1em;"
-    }, parent);
+            "padding:1em 1em;";
+    }
+    const dialog = createElement("div", attrs, children, parent);
 
     function isEventOutside(e){
         let target = e.target;
@@ -87,30 +109,40 @@ function createDialogWindow(parent){
     return dialog;
 }
 
-function createPopupMenu(items, parent, x, y){
-    const menuDiv = createDialogWindow(parent);
-    menuDiv.style.padding = "4px 1px";
-
+function createPopupMenu(x, y, items, parent){
     const ITEM_BG_NORMAL = "";
     const ITEM_BG_HOVER = "rgba(200, 200, 200, 1.0)";
-    for(const item of items){
-        const itemDiv = createElement("div", {
-            style: "padding:4px 1em"}, menuDiv);
-        itemDiv.appendChild(document.createTextNode(item.text));
-        itemDiv.addEventListener("click", e=>{
-            if(item.handler){
-                item.handler();
-            }
-            menuDiv.close();
-        }, false);
-        itemDiv.addEventListener("mouseenter", e=>{
-            itemDiv.style.backgroundColor = ITEM_BG_HOVER;
-        }, false);
-        itemDiv.addEventListener("mouseleave", e=>{
-            itemDiv.style.backgroundColor = ITEM_BG_NORMAL;
-        }, false);
-    }
+    const ITEM_COLOR_DISABLED = "#888";
 
+    const menuDiv = createDialogWindow({"class":"popup-menu"}, [
+        items.map(item=>{
+            if(item.invisible){
+                return null;
+            }
+            const itemDiv = createElement("div", {
+                style: "padding:4px 1em"}, item.text);
+            if(item.disabled){
+                itemDiv.style.color = ITEM_COLOR_DISABLED;
+                return itemDiv;
+            }
+            itemDiv.addEventListener("click", e=>{
+                if(item.handler){
+                    item.handler();
+                }
+                menuDiv.close();
+            }, false);
+            itemDiv.addEventListener("mouseenter", e=>{
+                itemDiv.style.backgroundColor = ITEM_BG_HOVER;
+            }, false);
+            itemDiv.addEventListener("mouseleave", e=>{
+                itemDiv.style.backgroundColor = ITEM_BG_NORMAL;
+            }, false);
+            return itemDiv;
+        })
+    ], parent);
+    menuDiv.style.padding = "4px 1px";
+
+    // supress overflow
     const bcr = menuDiv.getBoundingClientRect();
     const menuW = bcr.right - bcr.left;
     const menuH = bcr.bottom - bcr.top;
@@ -124,30 +156,25 @@ function createPopupMenu(items, parent, x, y){
     menuDiv.style.top = y + "px";
 }
 
-function createTextDialog(parent, message, text, onOk){
-    const dialog = createDialogWindow(parent);
-
-    const messageDiv = createElement("div", {}, dialog);
-    messageDiv.appendChild(document.createTextNode(message));
-
-    const textarea = createElement("textarea", {
-        style: "display:block;"+
-            "margin: auto;"+
-            "max-width:100%;"+
-            "width:40em;"+
-            "height:4em;"}, dialog);
+function createTextDialog(message, text, onOk, parent){
+    let textarea;
+    const dialog = createDialogWindow({}, [
+        createElement("div", {}, message),
+        textarea = createElement("textarea", {
+            style: "display:block;"+
+                   "margin: auto;"+
+                   "max-width:100%;"+
+                   "width:40em;"+
+                   "height:4em;"}),
+        createElement("div", {"class":"control-bar", style:"text-align:right"},
+            onOk ? [
+                createButton("OK", ()=>{close(); onOk();}),
+                createButton("Cancel", close)
+            ] :
+            createButton("OK", close)
+        )
+    ], parent);
     textarea.value = text;
-
-    const buttonDiv = createElement("div", {
-        "class": "control-bar",
-        style: "text-align:right"}, dialog);
-    if(onOk){
-        createButton(buttonDiv, "OK", ()=>{close(); onOk();});
-        createButton(buttonDiv, "Cancel", close);
-    }
-    else{
-        createButton(buttonDiv, "OK", close);
-    }
 
     function close(){
         dialog.close();
@@ -155,34 +182,40 @@ function createTextDialog(parent, message, text, onOk){
     return {dialog, textarea};
 }
 
-function createButton(parent, value, onClick){
+function createButton(value, onClick, parent){
     const button = createElement("input", {
         type: "button",
-        value: value}, parent);
+        value: value}, [], parent);
     button.addEventListener('click', onClick, false);
     return button;
 }
 
-function createCheckbox(parent, text, checked, onChange){
-    const label = createElement("label", {}, parent);
-    const checkbox = createElement("input", {
-        type: "checkbox"}, label);
+function createCheckbox(text, checked, onChange, parent){
+    let checkbox;
+    const label = createElement("label", {}, [
+        checkbox = createElement("input", {type:"checkbox"}),
+        text
+    ], parent);
     checkbox.checked = checked;
     checkbox.addEventListener('change', onChange, false);
-    label.appendChild(document.createTextNode(text));
     return label;
 }
 
-function createRadioButtons(parent, name, items, onChange){
+function createRadioButtons(name, items, onChange, parent){
+    const labels = [];
     const inputs = [];
     for(const item of items){
-        const label = createElement("label", {}, parent);
-        const input = createElement("input", {type:"radio", name, value:item.value}, label);
+        let input;
+        const label = createElement("label", {}, [
+            input = createElement("input", {type:"radio", name, value:item.value}),
+            item.text,
+            item.children
+        ], parent);
         if(item.checked){
             input.checked = true;
         }
         input.addEventListener('change', onChangeItem, false);
-        label.appendChild(document.createTextNode(item.text));
+        labels.push(label);
         inputs.push(input);
     }
     function onChangeItem(e){
@@ -200,10 +233,11 @@ function createRadioButtons(parent, name, items, onChange){
             item.checked = true;
         }
     }
-    return {
+    labels.radio = {
         getByValue,
         selectByValue
     };
+    return labels;
 }
 
 
@@ -225,41 +259,46 @@ class BoardElement{
         const gridInterval = this.gridInterval = opt.gridInterval || 32;
         const gridMargin = this.gridMargin = opt.gridMargin || 50;
 
-        const rootElement = this.rootElement = this.element = createSVG("svg", {"class":"board", width:gridMargin*2+gridInterval*(w-1), height:gridMargin*2+gridInterval*(h-1)});
-        createSVG("rect", {width:"100%", height:"100%", fill:"#e3aa4e"}, rootElement);
-        this.defineStoneGradient(rootElement);
+        const rootElement = this.rootElement = this.element = createSVG(
+            "svg",
+            {
+                "class": "board",
+                width: gridMargin*2+gridInterval*(w-1),
+                height: gridMargin*2+gridInterval*(h-1)
+            },
+            [
+                createSVG("rect",{width:"100%", height:"100%", fill:"#e3aa4e"}),
+                this.defineStoneGradient()
+            ]);
 
         const gridRoot = this.gridRoot = createSVG("g", {
             "class":"board-grid-root",
             transform:"translate(" + (gridMargin-0.5) + " " + (gridMargin-0.5) + ")", //adjust pixel coordinates for sharper lines
             style:"pointer-events:none;"
-        }, rootElement);
+        }, null, rootElement);
 
         // Grid
-        const grid = createSVG("g", {"class":"board-grid"}, gridRoot);
-
-            // Lines
         const lineWidth = 1;
-        for(let x = 0; x < w; ++x){
-            const lineX = gridInterval * x;
-            createSVG("line", {x1:lineX, y1:-lineWidth/2, x2:lineX, y2:gridInterval*(h-1)+lineWidth/2, stroke:"black", "stroke-width":lineWidth}, grid);
-        }
-        for(let y = 0; y < h; ++y){
-            const lineY = gridInterval * y;
-            createSVG("line", {y1:lineY, x1:-lineWidth/2, y2:lineY, x2:gridInterval*(w-1)+lineWidth/2, stroke:"black", "stroke-width":lineWidth}, grid);
-        }
-
-            // Stars
         const starRadius = 2;
-        if(w&1 && h&1){
-            createSVG("circle", {cx:gridInterval*((w-1)/2), cy:gridInterval*((h-1)/2), r:starRadius}, grid);
-        }
-        if(w>=13 && h>=13){
-            createSVG("circle", {cx:gridInterval*3, cy:gridInterval*3, r:starRadius}, grid);
-            createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*3, r:starRadius}, grid);
-            createSVG("circle", {cx:gridInterval*3, cy:gridInterval*(h-4), r:starRadius}, grid);
-            createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*(h-4), r:starRadius}, grid);
-        }
+        const grid = createSVG("g", {"class":"board-grid"}, [
+            // Lines
+            Array.from({length:w}, (u,x)=>{
+                const lineX = gridInterval * x;
+                return createSVG("line", {x1:lineX, y1:-lineWidth/2, x2:lineX, y2:gridInterval*(h-1)+lineWidth/2, stroke:"black", "stroke-width":lineWidth});
+            }),
+            Array.from({length:h}, (u,y)=>{
+                const lineY = gridInterval * y;
+                return createSVG("line", {y1:lineY, x1:-lineWidth/2, y2:lineY, x2:gridInterval*(w-1)+lineWidth/2, stroke:"black", "stroke-width":lineWidth});
+            }),
+            // Stars
+            (w&1 && h&1) ? createSVG("circle", {cx:gridInterval*((w-1)/2), cy:gridInterval*((h-1)/2), r:starRadius}) : null,
+            (w>=13 && h>=13) ? [
+                createSVG("circle", {cx:gridInterval*3, cy:gridInterval*3, r:starRadius}),
+                createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*3, r:starRadius}),
+                createSVG("circle", {cx:gridInterval*3, cy:gridInterval*(h-4), r:starRadius}),
+                createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*(h-4), r:starRadius})
+            ] : null
+        ], gridRoot);
 
             // Input
         rootElement.addEventListener("click", (e)=>{
@@ -279,23 +318,25 @@ class BoardElement{
             this.intersections[pos] = {state:EMPTY, elements:null};
         }
 
-        this.shadows = createSVG("g", {"class":"board-shadows"}, gridRoot);
-        this.stones = createSVG("g", {"class":"board-stones"}, gridRoot);
-        this.overlays = createSVG("g", {"class":"board-overlays"}, gridRoot);
+        this.shadows = createSVG("g", {"class":"board-shadows"}, null, gridRoot);
+        this.stones = createSVG("g", {"class":"board-stones"}, null, gridRoot);
+        this.overlays = createSVG("g", {"class":"board-overlays"}, null, gridRoot);
     }
 
-    defineStoneGradient(svg){
-        const defs = createSVG("defs", {}, svg);
-        const black = createSVG("radialGradient", {
-            id:"stone-black", cx:0.5, cy:0.5, fx:0.7, fy:0.3, r:0.55}, defs);
-        createSVG("stop", {offset:"0%", "stop-color":"#606060"},black);
-        createSVG("stop", {offset:"100%", "stop-color":"#000000"},black);
-
-        const white = createSVG("radialGradient", {
-            id:"stone-white", cx:0.5, cy:0.5, fx:0.7, fy:0.3, r:0.6}, defs);
-        createSVG("stop", {offset:"0%", "stop-color":"#ffffff"},white);
-        createSVG("stop", {offset:"80%", "stop-color":"#e0e0e0"},white);
-        createSVG("stop", {offset:"100%", "stop-color":"#b0b0b0"},white);
+    defineStoneGradient(){
+        return createSVG("defs", {}, [
+            createSVG("radialGradient", {
+                id:"stone-black", cx:0.5, cy:0.5, fx:0.7, fy:0.3, r:0.55}, [
+                    createSVG("stop", {offset:"0%", "stop-color":"#606060"}),
+                    createSVG("stop", {offset:"100%", "stop-color":"#000000"})
+                ]),
+            createSVG("radialGradient", {
+                id:"stone-white", cx:0.5, cy:0.5, fx:0.7, fy:0.3, r:0.6}, [
+                    createSVG("stop", {offset:"0%", "stop-color":"#ffffff"}),
+                    createSVG("stop", {offset:"80%", "stop-color":"#e0e0e0"}),
+                    createSVG("stop", {offset:"100%", "stop-color":"#b0b0b0"})
+                ])
+        ]);
     }
 
     getIntersectionX(x){return x * this.gridInterval;}
@@ -407,8 +448,7 @@ class BoardElement{
                 "font-weight:bold;"+
                 "font-size:" + fontSize +";",
             "text-anchor": "middle",
-            "alignment-baseline": "middle"}, this.overlays);
-        elem.appendChild(document.createTextNode(text));
+            "alignment-baseline": "middle"}, [text], this.overlays);
         if(onClick){
             elem.style.pointerEvents = "auto";
             elem.addEventListener("click", onClick, false);
@@ -447,8 +487,8 @@ class GameView{
             this.rootElement.parentNode.removeChild(this.rootElement);
             this.rootElement = null;
         }
-        const rootElement = this.rootElement = document.createElement("div");
-        this.parent.appendChild(rootElement);
+        const rootElement = this.rootElement = createElement(
+            "div", {}, [], this.parent);
 
         // Game Status Bar
         this.createGameStatusBar(); //set this.statusText
@@ -489,38 +529,40 @@ class GameView{
     }
 
     onMenuButtonClick(e){
-        createPopupMenu([
+        createPopupMenu(e.clientX, e.clientY, [
             {text:"初期化", handler:()=>this.openResetDialog()},
             {text:"SGFインポート", handler:()=>this.importSGF()},
             {text:"SGFエクスポート", handler:()=>this.exportSGF()},
             {text:"コメント設定", handler:()=>this.setCommentToCurrentMove()},
             {text:"フリー編集", handler:()=>this.startFreeEditMode()}
-        ], document.body, e.clientX, e.clientY);
+        ]);
     }
 
     openResetDialog(){
-        const dialog = createDialogWindow(document.body);
+        const dialog = createDialogWindow();
 
         const currentW = this.model.board.w;
         const currentH = this.model.board.h;
 
-        dialog.innerHTML = `
-<form>
-  <div>
-    <div><label><input type="radio" name="size" value="9" />9 x 9</label></div>
-    <div><label><input type="radio" name="size" value="13" />13 x 13</label></div>
-    <div><label><input type="radio" name="size" value="19" />19 x 19</label></div>
-    <div class="custom"><label><input type="radio" name="size" value="custom" checked/>Custom</label>
-      <input type="number" name="custom-w" min="1" max="52" value="${currentW}" /> x
-      <input type="number" name="custom-h" min="1" max="52" value="${currentH}" />
-    </div>
-  </div>
-  <div class="control-bar">
-    <button type="submit">Ok</button>
-    <button type="button" class="button-cancel">Cancel</button>
-  </div>
-</form>`;
-        const form = dialog.querySelector("form");
+        let buttonCancel;
+        const form = createElement("form", {}, [
+            createElement("div", {}, [
+                createRadioButtons("size", [
+                    {value:"9", text:"9 x 9"},
+                    {value:"13", text:"13 x 13"},
+                    {value:"19", text:"19 x 19"},
+                    {value:"custom", text:"custom", checked:true, children:[
+                        createElement("input", {type:"number", name:"custom-w", min:1, max:52, value:currentW}),
+                        document.createTextNode(" x "),
+                        createElement("input", {type:"number", name:"custom-h", min:1, max:52, value:currentH})
+                    ]},
+                ], updateCustomDisabled).map(elem=>createElement("div", {}, elem))
+            ]),
+            createElement("div", {"class":"control-bar"}, [
+                createElement("button", {type:"submit"}, "Ok"),
+                buttonCancel = createElement("button", {type:"button"}, "Cancel"),
+            ])
+        ], dialog);
 
         form.addEventListener("submit", (e)=>{
             e.preventDefault();
@@ -533,13 +575,9 @@ class GameView{
             dialog.close();
         }, false);
 
-        const buttonCancel = dialog.querySelector(".button-cancel");
         buttonCancel.addEventListener("click", (e)=>{
             dialog.close();
         });
-
-        const checkboxes = dialog.querySelectorAll('input[type="radio"]');
-        checkboxes.forEach(elem=>elem.addEventListener("change", updateCustomDisabled), false);
 
         const checkboxCustom = dialog.querySelector('input[value="custom"]');
         function updateCustomDisabled(){
@@ -639,11 +677,13 @@ class GameView{
     }
 
     createMoveController(){
-        const moveDiv = this.moveController = createElement("div", {"class": "control-bar"}, this.rootElement);
-        createButton(moveDiv, "メニュー", (e)=>this.onMenuButtonClick(e));
-        createButton(moveDiv, "パス", ()=>this.pass());
-        createButton(moveDiv, "投了", ()=>this.resign());
-        //createButton(moveDiv, "分析", ()=>this.onAnalyzeButtonClick());
+        const moveDiv = this.moveController = createElement(
+            "div", {"class": "control-bar"}, [
+                createButton("メニュー", (e)=>this.onMenuButtonClick(e)),
+                createButton("パス", ()=>this.pass()),
+                createButton("投了", ()=>this.resign())
+                //createButton("分析", ()=>this.onAnalyzeButtonClick())
+            ], this.rootElement);
     }
 
     putStone(pos){
@@ -727,9 +767,9 @@ class GameView{
     // Game Status
     //
     createGameStatusBar(parent){
-        const statusDiv = createElement("div", {"class": "control-bar"}, this.rootElement);
-        const statusText = this.statusText = document.createTextNode("");
-        statusDiv.appendChild(statusText);
+        const statusDiv = createElement("div", {"class": "control-bar"}, [
+            this.statusText = document.createTextNode("")
+        ], this.rootElement);
     }
 
     updateStatusText(){
@@ -756,33 +796,33 @@ class GameView{
     //
 
     createHistoryController(){
-        const historyDiv = this.historyController = createElement("div", {"class": "control-bar"}, this.rootElement);
-        const first = createButton(historyDiv, "|<", ()=>{
+        const historyDiv = this.historyController = createElement("div", {"class": "control-bar"}, [], this.rootElement);
+        const first = createButton("|<", ()=>{
             this.model.undoAll();
             this.update();
-        });
-        const prev = createButton(historyDiv, "<", ()=>{
+        }, historyDiv);
+        const prev = createButton("<", ()=>{
             this.model.undo();
             this.update();
-        });
-        const next = createButton(historyDiv, ">", ()=>{
+        }, historyDiv);
+        const next = createButton(">", ()=>{
             this.model.redo();
             this.update();
-        });
-        const last = createButton(historyDiv, ">|", ()=>{
+        }, historyDiv);
+        const last = createButton(">|", ()=>{
             this.model.redoAll();
             this.update();
-        });
+        }, historyDiv);
         this.historyControllerButtons = {first, prev, next, last};
 
-        createCheckbox(historyDiv, "分岐表示", this.showBranches, (e)=>{
+        createCheckbox("分岐表示", this.showBranches, (e)=>{
             this.showBranches = e.target.checked;
             this.update();
-        });
-        createCheckbox(historyDiv, "180度回転", this.rotate180, (e)=>{
+        }, historyDiv);
+        createCheckbox("180度回転", this.rotate180, (e)=>{
             this.rotate180 = e.target.checked;
             this.update();
-        });
+        }, historyDiv);
     }
     updateHistoryController(){
         const move = this.model.history.getCurrentMove();
@@ -839,7 +879,7 @@ class GameView{
 
     onBranchTextClick(pos, e){
         e.stopPropagation();
-        createPopupMenu([
+        createPopupMenu(e.clientX, e.clientY, [
             {text:"ここに打つ", handler:()=>{
                 if(pos == NPOS){
                     ///@todo
@@ -857,7 +897,7 @@ class GameView{
             {text:"分岐を削除", handler:()=>this.deleteBranch(pos)},
             {text:"分岐の順番を前にする", handler:()=>this.changeBranchOrder(pos, -1)},
             {text:"分岐の順番を後にする", handler:()=>this.changeBranchOrder(pos, 1)},
-        ], document.body, e.clientX, e.clientY);
+        ]);
         return;
     }
 
@@ -879,13 +919,11 @@ class GameView{
 
     exportSGF(){
         createTextDialog(
-            document.body,
             "Export SGF",
             this.model.toSGF());
     }
     importSGF(){
         const dialog = createTextDialog(
-            document.body,
             "Import SGF",
             "",
             ()=>{
@@ -897,8 +935,8 @@ class GameView{
     // Comment
 
     createCommentTextArea(){
-        const div = createElement("div", {"class":"comment control-bar"}, this.rootElement);
-        const textarea = this.commentTextArea = createElement("textarea", {}, div);
+        const div = createElement("div", {"class":"comment control-bar"}, [], this.rootElement);
+        const textarea = this.commentTextArea = createElement("textarea", {}, [], div);
         textarea.addEventListener("change", (e)=>this.onCommentTextAreaChange(e), false);
         this.commentTextAreaTarget = null;
     }
@@ -973,9 +1011,9 @@ class GameView{
                 case "click":
                     e.stopPropagation();
                     if( ! gameView.model.board.isEmpty(pos)){
-                        createPopupMenu([
+                        createPopupMenu(e.clientX, e.clientY, [
                             {text:"この手まで戻る", handler:()=>gameView.backToMove(pos)}
-                        ], document.body, e.clientX, e.clientY);
+                        ]);
                     }
                     break;
                 case "mousemove":
@@ -1031,27 +1069,28 @@ class GameView{
             createController(){
                 const bar = this.controlBar = createElement("div", {
                     "class":"free-edit control-bar"
-                }, gameView.rootElement);
-                createCheckbox(bar, "交互", this.alternately, (e)=>{
-                    this.alternately = !this.alternately;
-                });
-                this.colorSelector = createRadioButtons(
-                    bar, "free-edit-color",
-                    [
-                        {value:BLACK, text:"黒", checked:true},
-                        {value:WHITE, text:"白"},
-                        {value:EMPTY, text:"空"},
-                    ],
-                    value=>{
-                        const color = parseInt(value);
-                        if(color == BLACK || color == WHITE || color == EMPTY){
-                            this.color = color;
-                        }
-                    });
-                createButton(bar, "終了", ()=>{gameView.popMode();});
-                createCheckbox(bar, "白先", gameView.model.getFirstTurn() == WHITE, (e)=>{
-                    gameView.model.setFirstTurn(e.target.checked ? WHITE : BLACK);
-                });
+                }, [
+                    createCheckbox("交互", this.alternately, (e)=>{
+                        this.alternately = !this.alternately;
+                    }),
+                    this.colorSelector = createRadioButtons(
+                        "free-edit-color",
+                        [
+                            {value:BLACK, text:"黒", checked:true},
+                            {value:WHITE, text:"白"},
+                            {value:EMPTY, text:"空"},
+                        ],
+                        value=>{
+                            const color = parseInt(value);
+                            if(color == BLACK || color == WHITE || color == EMPTY){
+                                this.color = color;
+                            }
+                        }),
+                    createButton("終了", ()=>{gameView.popMode();}),
+                    createCheckbox("白先", gameView.model.getFirstTurn() == WHITE, (e)=>{
+                        gameView.model.setFirstTurn(e.target.checked ? WHITE : BLACK);
+                    })
+                ], gameView.rootElement);
             }
             hookMouseEvent(){
                 gameView.boardElement.element.addEventListener("mousedown", this.onMouseDownThis = e=>this.onMouseDown(e), false);
@@ -1101,7 +1140,7 @@ class GameView{
                     if(this.alternately){
                         const newColor = getOppositeColor(this.color);
                         if(newColor != this.color){
-                            this.colorSelector.selectByValue(newColor);
+                            this.colorSelector.radio.selectByValue(newColor);
                             this.color = newColor;
                         }
                     }
