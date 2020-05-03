@@ -12,6 +12,10 @@ const POS_RESIGN = igo.POS_RESIGN;
 const Game = igo.Game;
 const getOppositeColor = igo.getOppositeColor;
 
+function clamp(x, xmin, xmax){
+    return x < xmin ? xmin : x > xmax ? xmax : x;
+}
+
 //
 // HTML UI Utilities
 //
@@ -272,9 +276,11 @@ class BoardElement{
             ]);
 
         this.elementScale = 1.0; //SVG要素のサイズの縮尺(width=, height=に影響)
-        this.viewScale = 1.0; //表示する内容の縮尺(viewBox=に影響)
+        this.scrollScale = 1.0; //表示する内容の縮尺(viewBox=に影響) 1.0 ~
+        this.scrollX = 0; // スクロール位置(viewBox=に影響) 0 ~ (this.scrollScale - 1) * this.viewArea.width
+        this.scrollY = 0; // スクロール位置(viewBox=に影響) 0 ~ (this.scrollScale - 1) * this.viewArea.height
         this.viewArea = {left:0, top:0, right:boardPixelW, bottom:boardPixelH, width:boardPixelW, height:boardPixelH}; //盤の中の表示する範囲(viewBox=に影響)
-        this.updateViewBox(); //set width= height=
+        this.updateWidthHeightViewBox();
 
         const gridRoot = this.gridRoot = createSVG("g", {
             "class":"board-grid-root",
@@ -333,13 +339,10 @@ class BoardElement{
     getIntersectionX(x){return x * this.gridInterval;}
     getIntersectionY(y){return y * this.gridInterval;}
 
-    convertEventPosition(event){
-        const bcr = this.rootElement.getBoundingClientRect();
-        const xOnElement = event.clientX - bcr.left;
-        const yOnElement = event.clientY - bcr.top;
+    convertElementPosition(xOnElement, yOnElement){
         // coordinates for this.rootElement
-        const rootX = this.viewArea.left + xOnElement / (this.viewScale * this.elementScale);
-        const rootY = this.viewArea.top + yOnElement / (this.viewScale * this.elementScale);
+        const rootX = this.viewArea.left + (xOnElement / this.elementScale + this.scrollX) / this.scrollScale;
+        const rootY = this.viewArea.top + (yOnElement / this.elementScale + this.scrollY) / this.scrollScale;
         // coordinates for this.gridRoot, this.shadows, this.stones, this.overlays
         const gridX = rootX - this.gridMargin;
         const gridY = rootY - this.gridMargin;
@@ -347,6 +350,12 @@ class BoardElement{
         const x = Math.floor(gridX / this.gridInterval + 0.5);
         const y = Math.floor(gridY / this.gridInterval + 0.5);
         return {rootX, rootY, gridX, gridY, x, y};
+    }
+    convertEventPosition(event){
+        const bcr = this.rootElement.getBoundingClientRect();
+        return this.convertElementPosition(
+            event.clientX - bcr.left,
+            event.clientY - bcr.top);
     }
 
     defineStoneGradient(){
@@ -482,17 +491,29 @@ class BoardElement{
 
     setElementScale(scale){
         this.elementScale = scale;
-        this.updateViewBox();
+        this.updateWidthHeightViewBox();
     }
-    setViewScale(scale){
-        this.viewScale = scale;
-        this.updateViewBox();
+    setScroll(x, y, scale){
+        this.scrollScale = Math.max(1.0, scale);
+        this.scrollX = x;
+        this.scrollY = y;
+        this.clampScrollPosition();
+        this.updateWidthHeightViewBox();
     }
+    clampScrollPosition() {
+        // 盤面(viewArea)外が見えないようにスクロール位置を制限する。
+        this.scrollX = clamp(this.scrollX, this.getScrollXMin(), this.getScrollXMax());
+        this.scrollY = clamp(this.scrollY, this.getScrollYMin(), this.getScrollYMax());
+    }
+    getScrollXMin(){ return 0;}
+    getScrollYMin(){ return 0;}
+    getScrollXMax(){ return (this.scrollScale - 1) * this.viewArea.width;}
+    getScrollYMax(){ return (this.scrollScale - 1) * this.viewArea.height;}
     setViewArea(x1, y1, x2, y2){
-        const l = Math.min(Math.max(Math.min(x1, x2), 0), this.w-1);
-        const t = Math.min(Math.max(Math.min(y1, y2), 0), this.h-1);
-        const r = Math.min(Math.max(Math.max(x1, x2), 0), this.w-1);
-        const b = Math.min(Math.max(Math.max(y1, y2), 0), this.h-1);
+        const l = clamp(Math.min(x1, x2), 0, this.w-1);
+        const t = clamp(Math.min(y1, y2), 0, this.h-1);
+        const r = clamp(Math.max(x1, x2), 0, this.w-1);
+        const b = clamp(Math.max(y1, y2), 0, this.h-1);
 
         const left   = Math.floor(this.gridMargin + this.gridInterval * l - (l == 0 ? this.gridMargin : this.gridInterval*0.5));
         const top    = Math.floor(this.gridMargin + this.gridInterval * t - (t == 0 ? this.gridMargin : this.gridInterval*0.5));
@@ -502,23 +523,22 @@ class BoardElement{
         const width = (right - left);
         const height = (bottom - top);
         this.viewArea = {left, top, right, bottom, width, height};
-
-        this.updateViewBox();
+        this.clampScrollPosition();
+        this.updateWidthHeightViewBox();
     }
     clearViewArea(){
         const width = this.boardPixelW;
         const height = this.boardPixelH;
         this.viewArea = {left:0, top:0, right:width, bottom:height, width, height};
-        this.updateViewBox();
+        this.clampScrollPosition();
+        this.updateWidthHeightViewBox();
     }
-    updateViewBox(){
-        const viewAreaW = this.viewArea.width / this.viewScale;
-        const viewAreaH = this.viewArea.height / this.viewScale;
+    updateWidthHeightViewBox(){
         const viewBox =
-              this.viewArea.left + "," +
-              this.viewArea.top + "," +
-              viewAreaW + "," +
-              viewAreaH;
+              (this.viewArea.left + this.scrollX / this.scrollScale) + "," +
+              (this.viewArea.top + this.scrollY / this.scrollScale) + "," +
+              (this.viewArea.width / this.scrollScale) + "," +
+              (this.viewArea.height / this.scrollScale);
         const elementW = Math.ceil(this.viewArea.width * this.elementScale);
         const elementH = Math.ceil(this.viewArea.height * this.elementScale);
         this.rootElement.setAttributeNS(null, "viewBox", viewBox);
@@ -564,7 +584,7 @@ class GameView{
 
         // Board
         const boardWrapper = this.boardWrapper = createElement("div", {
-            style: "overflow:hidden;"
+            style: "padding:0; margin:0; overflow:hidden;" //for swipe & pinch operation
         }, [], rootElement);
         const boardElement = this.boardElement = new BoardElement(w, h);
         boardWrapper.appendChild(boardElement.element);
@@ -590,6 +610,7 @@ class GameView{
 
         //
         this.keepBoardScale();
+        this.setupSwipePinchOperation();
 
         this.update();
 
@@ -882,6 +903,7 @@ class GameView{
         }
     }
 
+    // keep board size to fit the window size
     keepBoardScale(){
         const gameView = this;
         window.addEventListener("resize", onResizeWindow);
@@ -915,6 +937,92 @@ class GameView{
             gameView.boardElement.setElementScale(elementScale);
         }
         onResizeWindow();
+    }
+
+    setupSwipePinchOperation(){
+        // this.boardElement.elementにaddEventListenerするとフリー編集
+        // で石を塗るときにスワイプしてしまう。ハンドラの呼び出し順は
+        // addEventListenerの登録順なので、フリー編集モードの起動より
+        // どうしても先になってしまう。
+        //
+        // しかたがないのでboardElementを包み込むdiv(this.boardWrapper)
+        // を作ってそこでタッチイベントを受け取ることにした。
+        //
+        // フリー編集モードなどboardElementにaddEventListenerする場所
+        // では必要に応じてstopPropagationすること。
+        this.boardWrapper.addEventListener("touchstart", onTouchStart, false);
+        this.boardWrapper.addEventListener("touchmove", onTouchMove, false);
+        this.boardWrapper.addEventListener("touchend", onTouchEnd, false);
+        this.boardWrapper.addEventListener("touchcancel", onTouchCancel, false);
+
+        const boardElement = this.boardElement;
+        let startPos = null;
+
+        function calculateCenterRadius(e){
+            if(e.touches.length == 0){
+                return null;
+            }
+            // center of all touches
+            const center = Array.prototype.reduce.call(
+                e.touches, (acc, curr)=>{
+                    acc.x += curr.clientX;
+                    acc.y += curr.clientY;
+                    return acc;
+                }, {x:0, y:0});
+            center.x /= e.touches.length;
+            center.y /= e.touches.length;
+            // mean distance from center
+            let radius = Array.prototype.reduce.call(
+                e.touches, (acc, curr)=>{
+                    const dx = curr.clientX - center.x;
+                    const dy = curr.clientY - center.y;
+                    acc += Math.sqrt(dx*dx+dy*dy);
+                    return acc;
+                }, 0) / e.touches.length;
+            // inverse element scaling
+            center.x = center.x / boardElement.elementScale;
+            center.y = center.y / boardElement.elementScale;
+            radius = radius / boardElement.elementScale;
+            return {
+                center,
+                radius,
+                scroll: {x:boardElement.scrollX, y:boardElement.scrollY},
+                scale: boardElement.scrollScale,
+                numTouches: e.touches.length,
+                moved: false
+            };
+        }
+
+        function onTouchStart(e){
+            // do not prevent default click event
+            //e.preventDefault();
+            startPos = calculateCenterRadius(e);
+        }
+        function onTouchMove(e){
+            const currPos = calculateCenterRadius(e);
+            if(startPos && currPos){
+                const dx = currPos.center.x - startPos.center.x;
+                const dy = currPos.center.y - startPos.center.y;
+                const dr = startPos.radius == 0 ? 1.0 : currPos.radius / startPos.radius;
+
+                boardElement.setScroll(
+                    startPos.scroll.x - dx - (startPos.scroll.x + currPos.center.x) * (1 - dr),
+                    startPos.scroll.y - dy - (startPos.scroll.y + currPos.center.y) * (1 - dr),
+                    startPos.scale * dr);
+                startPos.moved = true;
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }
+        function onTouchEnd(e){
+            if(startPos && startPos.moved){
+                e.preventDefault();
+            }
+            startPos = calculateCenterRadius(e);
+        }
+        function onTouchCancel(e){
+            startPos = calculateCenterRadius(e);
+        }
     }
 
 
@@ -1325,6 +1433,7 @@ class GameView{
             }
             onTouchMove(e){
                 if(e.touches.length == 1 && this.drawing){
+                    e.stopPropagation();
                     e.preventDefault();
                     this.paint(e.touches[0]);
                 }
