@@ -36,3 +36,5 @@ Github Pagesに置いてあります。
 ** 埋め込み使用例
 
 - [[https://misohena.github.io/js_igo/examples.html]]
+
+使い方はソースを参照のこと。
