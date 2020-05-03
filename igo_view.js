@@ -1075,19 +1075,23 @@ class GameView{
 
     createHistoryController(){
         const historyDiv = this.historyController = createElement("div", {"class": "igo-control-bar"}, [], this.bottomBar);
-        const first = createButton("|<", ()=>{
+        const first = createButton("|<", e=>{
+            e.preventDefault();
             this.model.undoAll();
             this.update();
         }, historyDiv);
-        const prev = createButton("<", ()=>{
+        const prev = createButton("<", e=>{
+            e.preventDefault();
             this.model.undo();
             this.update();
         }, historyDiv);
-        const next = createButton(">", ()=>{
+        const next = createButton(">", e=>{
+            e.preventDefault();
             this.model.redo();
             this.update();
         }, historyDiv);
-        const last = createButton(">|", ()=>{
+        const last = createButton(">|", e=>{
+            e.preventDefault();
             this.model.redoAll();
             this.update();
         }, historyDiv);
