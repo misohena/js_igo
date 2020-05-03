@@ -583,11 +583,17 @@ class GameView{
         this.createGameStatusBar(); //set this.statusText
 
         // Board
-        const boardWrapper = this.boardWrapper = createElement("div", {
-            style: "padding:0; margin:0; overflow:hidden;" //for swipe & pinch operation
+        const boardWrapperRow = this.boardWrapperRow = createElement("div", {
+             //for swipe & pinch operation
+            style: "padding:0; margin:0;"
         }, [], rootElement);
+        const boardWrapperBack = this.boardWrapperBack = createElement("div", {
+            //for swipe & pinch operation
+            style: "padding:0; margin:0; display: inline-block;"
+        }, [], boardWrapperRow);
         const boardElement = this.boardElement = new BoardElement(w, h);
-        boardWrapper.appendChild(boardElement.element);
+        boardElement.element.style.verticalAlign = "top";
+        boardWrapperBack.appendChild(boardElement.element);
 
         boardElement.onIntersectionClick = (x, y, e)=>{
             this.onIntersectionClick(this.toModelPosition(x, y), e);
@@ -923,7 +929,7 @@ class GameView{
             const windowH = window.innerHeight;
 
             // wrapper div width
-            const wrapperRect = gameView.boardWrapper.getBoundingClientRect();
+            const wrapperRect = gameView.boardWrapperRow.getBoundingClientRect();
             const wrapperW = wrapperRect.right-wrapperRect.left;
 
             // max board size
@@ -945,15 +951,15 @@ class GameView{
         // addEventListenerの登録順なので、フリー編集モードの起動より
         // どうしても先になってしまう。
         //
-        // しかたがないのでboardElementを包み込むdiv(this.boardWrapper)
+        // しかたがないのでboardElementを包み込むdiv(this.boardWrapperBack)
         // を作ってそこでタッチイベントを受け取ることにした。
         //
         // フリー編集モードなどboardElementにaddEventListenerする場所
         // では必要に応じてstopPropagationすること。
-        this.boardWrapper.addEventListener("touchstart", onTouchStart, false);
-        this.boardWrapper.addEventListener("touchmove", onTouchMove, false);
-        this.boardWrapper.addEventListener("touchend", onTouchEnd, false);
-        this.boardWrapper.addEventListener("touchcancel", onTouchCancel, false);
+        this.boardWrapperBack.addEventListener("touchstart", onTouchStart, false);
+        this.boardWrapperBack.addEventListener("touchmove", onTouchMove, false);
+        this.boardWrapperBack.addEventListener("touchend", onTouchEnd, false);
+        this.boardWrapperBack.addEventListener("touchcancel", onTouchCancel, false);
 
         const boardElement = this.boardElement;
         let startPos = null;
