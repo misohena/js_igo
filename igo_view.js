@@ -1222,7 +1222,7 @@ class GameView{
 
     createCommentTextArea(){
         const div = createElement("div", {"class":"igo-comment igo-control-bar"}, [], this.bottomBar);
-        const textarea = this.commentTextArea = createElement("textarea", {}, [], div);
+        const textarea = this.commentTextArea = createElement("textarea", {rows:2, style:"width:100%"}, [], div);
         textarea.addEventListener("change", (e)=>this.onCommentTextAreaChange(e), false);
         this.commentTextAreaTarget = null;
         this.updateCommentTextAreaDisplay();
