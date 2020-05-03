@@ -63,7 +63,7 @@ function createDialogWindow(attrs, children, parent){
     if(!attrs){
         attrs = {};
     }
-    attrs["class"] += " dialog-window";
+    attrs["class"] += " igo-dialog-window";
     if(attrs.style === undefined){
         attrs.style =
             "user-select:none;"+
@@ -118,7 +118,7 @@ function createPopupMenu(x, y, items, parent){
     const ITEM_BG_HOVER = "rgba(200, 200, 200, 1.0)";
     const ITEM_COLOR_DISABLED = "#888";
 
-    const menuDiv = createDialogWindow({"class":"popup-menu"}, [
+    const menuDiv = createDialogWindow({"class":"igo-popup-menu"}, [
         items.map(item=>{
             if(item.invisible){
                 return null;
@@ -170,7 +170,7 @@ function createTextDialog(message, text, onOk, parent){
                    "max-width:100%;"+
                    "width:40em;"+
                    "height:4em;"}),
-        createElement("div", {"class":"control-bar", style:"text-align:right"},
+        createElement("div", {"class":"igo-control-bar", style:"text-align:right"},
             onOk ? [
                 createButton("OK", ()=>{close(); onOk();}),
                 createButton("Cancel", close)
@@ -269,7 +269,7 @@ class BoardElement{
         const boardPixelH = this.boardPixelH = this.gridMargin*2+this.gridInterval*(this.h-1);
 
         const rootElement = this.rootElement = this.element = createSVG(
-            "svg", {"class": "board"},
+            "svg", {"class": "igo-board"},
             [
                 createSVG("rect",{x:0, y:0, width:boardPixelW, height:boardPixelH, fill:"#e3aa4e"}),
                 this.defineStoneGradient()
@@ -283,7 +283,7 @@ class BoardElement{
         this.updateWidthHeightViewBox();
 
         const gridRoot = this.gridRoot = createSVG("g", {
-            "class":"board-grid-root",
+            "class":"igo-board-grid-root",
             transform:"translate(" + (gridMargin-0.5) + " " + (gridMargin-0.5) + ")", //adjust pixel coordinates for sharper lines
             style:"pointer-events:none;"
         }, null, rootElement);
@@ -291,7 +291,7 @@ class BoardElement{
         // Grid
         const lineWidth = 1;
         const starRadius = 2;
-        const grid = createSVG("g", {"class":"board-grid"}, [
+        const grid = createSVG("g", {"class":"igo-board-grid"}, [
             // Lines
             Array.from({length:w}, (u,x)=>{
                 const lineX = gridInterval * x;
@@ -329,9 +329,9 @@ class BoardElement{
             this.intersections[pos] = {state:EMPTY, elements:null};
         }
 
-        this.shadows = createSVG("g", {"class":"board-shadows"}, null, gridRoot);
-        this.stones = createSVG("g", {"class":"board-stones"}, null, gridRoot);
-        this.overlays = createSVG("g", {"class":"board-overlays"}, null, gridRoot);
+        this.shadows = createSVG("g", {"class":"igo-board-shadows"}, null, gridRoot);
+        this.stones = createSVG("g", {"class":"igo-board-stones"}, null, gridRoot);
+        this.overlays = createSVG("g", {"class":"igo-board-overlays"}, null, gridRoot);
     }
 
     // Position
@@ -559,6 +559,7 @@ class GameView{
         this.parent = parent = parent || document.body;
 
         this.showBranches = false;
+        this.commentTextAreaVisible = false;
         this.rotate180 = false;
 
         this.resetGame(game || new Game(9));
@@ -577,20 +578,22 @@ class GameView{
             this.rootElement = null;
         }
         const rootElement = this.rootElement = createElement(
-            "div", {}, [], this.parent);
+            "div", {"class":"igo-game"}, [], this.parent);
 
-        // Game Status Bar
+        // Top Bar
+        this.topBar = createElement("div", {"class":"igo-top-bar"}, [], rootElement);
+            // Game Status Bar
         this.createGameStatusBar(); //set this.statusText
 
         // Board
         const boardWrapperRow = this.boardWrapperRow = createElement("div", {
-             //for swipe & pinch operation
             style: "padding:0; margin:0;"
-        }, [], rootElement);
+        }, [], rootElement); //for board size fitting to parent width
+
         const boardWrapperBack = this.boardWrapperBack = createElement("div", {
-            //for swipe & pinch operation
             style: "padding:0; margin:0; display: inline-block;"
-        }, [], boardWrapperRow);
+        }, [], boardWrapperRow); //for swipe & pinch operation
+
         const boardElement = this.boardElement = new BoardElement(w, h);
         boardElement.element.style.verticalAlign = "top";
         boardWrapperBack.appendChild(boardElement.element);
@@ -607,10 +610,11 @@ class GameView{
 
         this.updateViewArea();
 
-        // Move Controller
+        // Bottom Bar
+        this.bottomBar = createElement("div", {"class":"igo-bottom-bar"}, [], rootElement);
+            // Move Controller
         this.createMoveController();
-
-        // History Controller
+            // History Controller
         this.createHistoryController();
         this.createCommentTextArea();
 
@@ -626,10 +630,12 @@ class GameView{
     hideMainUI(){
         this.moveController.style.display = "none";
         this.historyController.style.display = "none";
+        this.commentTextArea.style.display = "none";
     }
     showMainUI(){
         this.moveController.style.display = "";
         this.historyController.style.display = "";
+        this.updateCommentTextAreaDisplay();
     }
 
     onMenuButtonClick(e){
@@ -637,7 +643,6 @@ class GameView{
             {text:"初期化", handler:()=>this.openResetDialog()},
             {text:"SGFインポート", handler:()=>this.importSGF()},
             {text:"SGFエクスポート", handler:()=>this.exportSGF()},
-            {text:"コメント設定", handler:()=>this.setCommentToCurrentMove()},
             {text:"フリー編集", handler:()=>this.startFreeEditMode()}
         ]);
     }
@@ -662,9 +667,9 @@ class GameView{
                     ]},
                 ], updateCustomDisabled).map(elem=>createElement("div", {}, elem))
             ]),
-            createElement("div", {"class":"control-bar"}, [
-                createElement("button", {type:"submit"}, "Ok"),
-                buttonCancel = createElement("button", {type:"button"}, "Cancel"),
+            createElement("div", {"class":"igo-control-bar"}, [
+                createElement("input", {type:"submit", value:"OK"}),
+                buttonCancel = createElement("input", {type:"button", value:"Cancel"}),
             ])
         ], dialog);
 
@@ -700,6 +705,7 @@ class GameView{
         this.endMode();
         this.mode = mode;
         this.mode.start();
+        this.onBarHeightChanged();
     }
     endMode(){
         if(this.mode){
@@ -782,12 +788,12 @@ class GameView{
 
     createMoveController(){
         const moveDiv = this.moveController = createElement(
-            "div", {"class": "control-bar"}, [
+            "div", {"class": "igo-control-bar"}, [
                 createButton("メニュー", (e)=>this.onMenuButtonClick(e)),
                 createButton("パス", ()=>this.pass()),
                 createButton("投了", ()=>this.resign())
                 //createButton("分析", ()=>this.onAnalyzeButtonClick())
-            ], this.rootElement);
+            ], this.bottomBar);
     }
 
     putStone(pos){
@@ -911,40 +917,43 @@ class GameView{
 
     // keep board size to fit the window size
     keepBoardScale(){
-        const gameView = this;
-        window.addEventListener("resize", onResizeWindow);
-        function onResizeWindow(){// update size of boardElement
-            // control-bar height
-            const mainUIHeight = [
-                gameView.gameStatusDiv,
-                gameView.moveController,
-                gameView.historyController
-            ].reduce((acc, curr)=>{
-                const bcr = curr.getBoundingClientRect();
-                const height = bcr.bottom - bcr.top;
-                return acc + height;
-            }, 0);
-            // window size
-            const windowW = window.innerWidth;
-            const windowH = window.innerHeight;
+        window.addEventListener("resize", e=>this.fitBoardSizeToWindowAndParent(), false);
+        this.fitBoardSizeToWindowAndParent();
+    }
+    fitBoardSizeToWindowAndParent(){
+        // control-bar height
+        const mainUIHeight = [
+            this.topBar,
+            this.bottomBar
+        ].reduce((acc, curr)=>{
+            const bcr = curr.getBoundingClientRect();
+            const height = bcr.bottom - bcr.top;
+            return acc + height;
+        }, 0);
+        // window size
+        const windowW = window.innerWidth;
+        const windowH = window.innerHeight;
 
-            // wrapper div width
-            const wrapperRect = gameView.boardWrapperRow.getBoundingClientRect();
-            const wrapperW = wrapperRect.right-wrapperRect.left;
+        // wrapper div width (parent width)
+        const wrapperRect = this.boardWrapperRow.getBoundingClientRect();
+        const wrapperW = wrapperRect.right-wrapperRect.left;
 
-            // max board size
-            const maxBoardW = Math.min(windowW, wrapperW); //ウィンドウの幅か、包含divの幅
-            const maxBoardH = Math.max(windowH/3, windowH-mainUIHeight); //ウィンドウの1/3か、UIの高さを除いた高さ
+        // max board size
+        const maxBoardW = Math.min(windowW, wrapperW); //ウィンドウの幅か、包含divの幅
+        const maxBoardH = Math.max(windowH/3, windowH-mainUIHeight); //ウィンドウの1/3か、UIの高さを除いた高さ
 
-            // element size
-            const elementScaleX = Math.min(1, maxBoardW / gameView.boardElement.viewArea.width);
-            const elementScaleY = Math.min(1, maxBoardH / gameView.boardElement.viewArea.height);
-            const elementScale = Math.min(elementScaleX, elementScaleY);
-            gameView.boardElement.setElementScale(elementScale);
-        }
-        onResizeWindow();
+        // element size
+        const elementScaleX = Math.min(1, maxBoardW / this.boardElement.viewArea.width);
+        const elementScaleY = Math.min(1, maxBoardH / this.boardElement.viewArea.height);
+        const elementScale = Math.min(elementScaleX, elementScaleY);
+        this.boardElement.setElementScale(elementScale);
+    }
+    onBarHeightChanged(){
+        this.fitBoardSizeToWindowAndParent();
     }
 
+
+    // Swipe & Pinch Support
     setupSwipePinchOperation(){
         // this.boardElement.elementにaddEventListenerするとフリー編集
         // で石を塗るときにスワイプしてしまう。ハンドラの呼び出し順は
@@ -1035,10 +1044,10 @@ class GameView{
     //
     // Game Status
     //
-    createGameStatusBar(parent){
-        const statusDiv = this.gameStatusDiv = createElement("div", {"class": "control-bar"}, [
-            this.statusText = document.createTextNode("")
-        ], this.rootElement);
+    createGameStatusBar(){
+        const statusDiv = this.gameStatusDiv = createElement("div", {"class": "igo-control-bar"}, [
+            this.statusText = document.createTextNode("対局")
+        ], this.topBar);
     }
 
     updateStatusText(){
@@ -1065,7 +1074,7 @@ class GameView{
     //
 
     createHistoryController(){
-        const historyDiv = this.historyController = createElement("div", {"class": "control-bar"}, [], this.rootElement);
+        const historyDiv = this.historyController = createElement("div", {"class": "igo-control-bar"}, [], this.bottomBar);
         const first = createButton("|<", ()=>{
             this.model.undoAll();
             this.update();
@@ -1087,6 +1096,10 @@ class GameView{
         createCheckbox("分岐表示", this.showBranches, (e)=>{
             this.showBranches = e.target.checked;
             this.update();
+        }, historyDiv);
+        createCheckbox("コメント", this.commentTextAreaVisible, (e)=>{
+            this.commentTextAreaVisible = e.target.checked;
+            this.updateCommentTextAreaDisplay();
         }, historyDiv);
         createCheckbox("180度回転", this.rotate180, (e)=>{
             this.rotate180 = e.target.checked;
@@ -1204,10 +1217,19 @@ class GameView{
     // Comment
 
     createCommentTextArea(){
-        const div = createElement("div", {"class":"comment control-bar"}, [], this.rootElement);
+        const div = createElement("div", {"class":"igo-comment igo-control-bar"}, [], this.bottomBar);
         const textarea = this.commentTextArea = createElement("textarea", {}, [], div);
         textarea.addEventListener("change", (e)=>this.onCommentTextAreaChange(e), false);
         this.commentTextAreaTarget = null;
+        this.updateCommentTextAreaDisplay();
+    }
+
+    updateCommentTextAreaDisplay(){
+        const newDisplay = this.commentTextAreaVisible ? "" : "none";
+        if(this.commentTextArea.style.display != newDisplay){
+            this.commentTextArea.style.display = newDisplay;
+            this.onBarHeightChanged();
+        }
     }
 
     updateCommentTextArea(){
@@ -1215,15 +1237,14 @@ class GameView{
             this.updateCommentPropertyFromTextArea();
 
             const move = this.model.history.getCurrentMove();
-            if(move && move.hasOwnProperty("comment")){
+            if(move){
                 this.commentTextAreaTarget = move;
-                this.commentTextArea.value = move.comment;
-                this.commentTextArea.style.display = "";
+                this.commentTextArea.value =
+                    move.hasOwnProperty("comment") ? move.comment : "";
             }
             else{
                 this.commentTextAreaTarget = null;
                 this.commentTextArea.value = "";
-                this.commentTextArea.style.display = "none";
             }
         }
     }
@@ -1248,10 +1269,6 @@ class GameView{
         }
     }
 
-    setCommentToCurrentMove(){
-        this.model.setCommentToCurrentMove("");
-        this.updateCommentTextArea();
-    }
 
     //
     // Move Mode
@@ -1339,7 +1356,7 @@ class GameView{
 
             createController(){
                 const bar = this.controlBar = createElement("div", {
-                    "class":"free-edit control-bar"
+                    "class":"igo-free-edit igo-control-bar"
                 }, [
                     createCheckbox("交互", this.alternately, (e)=>{
                         this.alternately = !this.alternately;
@@ -1361,7 +1378,7 @@ class GameView{
                     createCheckbox("白先", gameView.model.getFirstTurn() == WHITE, (e)=>{
                         gameView.model.setFirstTurn(e.target.checked ? WHITE : BLACK);
                     })
-                ], gameView.rootElement);
+                ], gameView.bottomBar);
             }
 
             // Event Handlers
