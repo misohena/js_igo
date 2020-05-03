@@ -120,7 +120,7 @@ function createPopupMenu(x, y, items, parent){
 
     const menuDiv = createDialogWindow({"class":"igo-popup-menu"}, [
         items.map(item=>{
-            if(item.invisible){
+            if(item.visible === false){ //default:true
                 return null;
             }
             const itemDiv = createElement("div", {
@@ -555,12 +555,22 @@ igo.BoardElement = BoardElement;
 
 class GameView{
     constructor(parent, game, opt){
-        this.opt = opt = opt || {};
         this.parent = parent = parent || document.body;
 
-        this.showBranches = false;
-        this.commentTextAreaVisible = false;
-        this.rotate180 = false;
+        function toBool(v, defaultValue){
+            return v !== undefined ? v : defaultValue;
+        }
+        this.opt = opt = opt || {};
+        this.editable = toBool(opt.editable, true);
+        this.showBranches = toBool(opt.showBranchText, false);
+        this.rotate180 = toBool(opt.rotate180, false);
+        const showUI = toBool(opt.showUI, true);
+        this.showComment = toBool(opt.showComment, showUI);
+        this.showMenu = toBool(opt.showMenu, showUI);
+        this.showPassResign = toBool(opt.showPassResign, showUI);
+        this.showMoveController = this.showMenu || this.showPassResign;
+        this.showHistoryController = toBool(opt.showHistoryController, showUI);
+        this.showGameStatus = toBool(opt.showGameStatus, showUI);
 
         this.resetGame(game || new Game(9));
     }
@@ -628,22 +638,30 @@ class GameView{
     }
 
     hideMainUI(){
-        this.moveController.style.display = "none";
-        this.historyController.style.display = "none";
+        if(this.moveController){
+            this.moveController.style.display = "none";
+        }
+        if(this.historyController){
+            this.historyController.style.display = "none";
+        }
         this.commentTextArea.style.display = "none";
     }
     showMainUI(){
-        this.moveController.style.display = "";
-        this.historyController.style.display = "";
+        if(this.moveController){
+            this.moveController.style.display = "";
+        }
+        if(this.historyController){
+            this.historyController.style.display = "";
+        }
         this.updateCommentTextAreaDisplay();
     }
 
     onMenuButtonClick(e){
         createPopupMenu(e.clientX, e.clientY, [
-            {text:"初期化", handler:()=>this.openResetDialog()},
-            {text:"SGFインポート", handler:()=>this.importSGF()},
+            {text:"初期化", handler:()=>this.openResetDialog(), visible:this.editable},
+            {text:"SGFインポート", handler:()=>this.importSGF(), visible:this.editable},
             {text:"SGFエクスポート", handler:()=>this.exportSGF()},
-            {text:"フリー編集", handler:()=>this.startFreeEditMode()}
+            {text:"フリー編集", handler:()=>this.startFreeEditMode(), visible:this.editable}
         ]);
     }
 
@@ -787,30 +805,46 @@ class GameView{
     }
 
     createMoveController(){
+        if(!this.showMoveController){
+            return;
+        }
         const moveDiv = this.moveController = createElement(
             "div", {"class": "igo-control-bar"}, [
-                createButton("メニュー", (e)=>this.onMenuButtonClick(e)),
-                createButton("パス", ()=>this.pass()),
-                createButton("投了", ()=>this.resign())
+                this.showMenu ? createButton("メニュー", (e)=>this.onMenuButtonClick(e)) : null,
+                this.showPassResign ? createButton("パス", ()=>this.pass()) : null,
+                this.showPassResign ? createButton("投了", ()=>this.resign()) : null
                 //createButton("分析", ()=>this.onAnalyzeButtonClick())
             ], this.bottomBar);
     }
 
-    putStone(pos){
-        if(this.model.putStone(pos)){
-            this.update();
+    move(pos){
+        if(!this.editable){ // same move only if not editable
+            if(!this.model.history.findNextMove(pos)){
+                return;
+            }
+        }
+        if(pos == POS_PASS){
+            this.model.pass();
+        }
+        else if(pos == POS_RESIGN){
+            this.model.resign();
         }
         else{
-            alert('illegal');
+            if(!this.model.putStone(pos)){
+                alert('illegal');
+            }
         }
+        this.update();
+    }
+
+    putStone(pos){
+        this.move(pos);
     }
     pass(){
-        this.model.pass();
-        this.update();
+        this.move(POS_PASS);
     }
     resign(){
-        this.model.resign();
-        this.update();
+        this.move(POS_RESIGN);
     }
 
     //onAnalyzeButtonClick(){
@@ -1045,12 +1079,18 @@ class GameView{
     // Game Status
     //
     createGameStatusBar(){
-        const statusDiv = this.gameStatusDiv = createElement("div", {"class": "igo-control-bar"}, [
+        if(!this.showGameStatus){
+            return;
+        }
+        const statusDiv = createElement("div", {"class": "igo-control-bar"}, [
             this.statusText = document.createTextNode("対局")
         ], this.topBar);
     }
 
     updateStatusText(){
+        if(!this.statusText){
+            return;
+        }
         const gameStatus = this.model.isFinished() ?
               "終局 勝者=" + (
                   this.model.getWinner() == BLACK ? "黒" :
@@ -1074,6 +1114,9 @@ class GameView{
     //
 
     createHistoryController(){
+        if(!this.showHistoryController){
+            return;
+        }
         const historyDiv = this.historyController = createElement("div", {"class": "igo-control-bar"}, [], this.bottomBar);
         const first = createButton("|<", e=>{
             e.preventDefault();
@@ -1101,8 +1144,8 @@ class GameView{
             this.showBranches = e.target.checked;
             this.update();
         }, historyDiv);
-        createCheckbox("コメント", this.commentTextAreaVisible, (e)=>{
-            this.commentTextAreaVisible = e.target.checked;
+        createCheckbox("コメント", this.showComment, (e)=>{
+            this.showComment = e.target.checked;
             this.updateCommentTextAreaDisplay();
         }, historyDiv);
         createCheckbox("180度回転", this.rotate180, (e)=>{
@@ -1111,11 +1154,13 @@ class GameView{
         }, historyDiv);
     }
     updateHistoryController(){
-        const move = this.model.history.getCurrentMove();
-        this.historyControllerButtons.first.disabled = !move.prev;
-        this.historyControllerButtons.prev.disabled = !move.prev;
-        this.historyControllerButtons.next.disabled = !move.lastVisited;
-        this.historyControllerButtons.last.disabled = !move.lastVisited;
+        if(this.historyControllerButtons){
+            const move = this.model.history.getCurrentMove();
+            this.historyControllerButtons.first.disabled = !move.prev;
+            this.historyControllerButtons.prev.disabled = !move.prev;
+            this.historyControllerButtons.next.disabled = !move.lastVisited;
+            this.historyControllerButtons.last.disabled = !move.lastVisited;
+        }
     }
 
     updateBranchTexts(){
@@ -1164,6 +1209,9 @@ class GameView{
     }
 
     onBranchTextClick(pos, e){
+        if(!this.editable){
+            return;
+        }
         e.stopPropagation();
         createPopupMenu(e.clientX, e.clientY, [
             {text:"ここに打つ", handler:()=>{
@@ -1223,13 +1271,16 @@ class GameView{
     createCommentTextArea(){
         const div = createElement("div", {"class":"igo-comment igo-control-bar"}, [], this.bottomBar);
         const textarea = this.commentTextArea = createElement("textarea", {rows:2, style:"width:100%"}, [], div);
+        if(!this.editable){
+            textarea.disabled = true;
+        }
         textarea.addEventListener("change", (e)=>this.onCommentTextAreaChange(e), false);
         this.commentTextAreaTarget = null;
         this.updateCommentTextAreaDisplay();
     }
 
     updateCommentTextAreaDisplay(){
-        const newDisplay = this.commentTextAreaVisible ? "" : "none";
+        const newDisplay = this.showComment ? "" : "none";
         if(this.commentTextArea.style.display != newDisplay){
             this.commentTextArea.style.display = newDisplay;
             this.onBarHeightChanged();
@@ -1256,6 +1307,9 @@ class GameView{
         this.updateCommentPropertyFromTextArea();
     }
     updateCommentPropertyFromTextArea(){
+        if(!this.editable){
+            return;
+        }
         // reflect comment textarea => property
         if(this.commentTextAreaTarget){
             const commentNew = this.commentTextArea.value;

@@ -479,6 +479,10 @@ class HistoryTree{
     getPreviousMove(){return this.pointer.prev;}
     getFirstMoves(){return this.first.nexts;}
     getRootMove(){return this.first;}
+    findNextMove(pos){
+        return this.pointer ?
+            this.pointer.nexts.find(move=>move.pos == pos) : null;
+    }
 
     setCommentToCurrentMove(text){
         if(this.pointer){
