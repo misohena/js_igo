@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="stylesheet" href="igo.css" />
+    <script src="igo.js"></script>
+    <script src="igo_view.js"></script>
+    <title>js_igo examples</title>
+    <style>
+    section {margin-left: 2rem;}
+    h2 {margin-left: -1rem;}
+    </style>
+  </head>
+  <body>
+    <h1>使用例 - js_igo</h1>
+    <section>
+      <h2>詰碁</h2>
+      <p>詰碁を作りました。</p>
+      <script>
+      igo.insertGameViewBeforeCurrentScript(
+          igo.Game.fromSGF("(;GM[1]SZ[9]VW[da:id]C[黒番です。さあどこに打ちますか？]AW[ea]AB[fa]AW[eb]AB[fb:ib]AW[ec:ic](;B[ga];W[ha];B[ia];W[ha]C[全部取られちゃった！])(;B[ha]C[白はもう打てません。成功！])(;B[ia];W[ga];B[ha];W[ga]C[全部取られちゃった！]))"), {
+              showUI: false,
+              //showGameStatus: false,
+              //showMenu: false,
+              //showPassResign: false,
+              showComment: true,
+              showHistoryController: true,
+              showVisibilitySettings: false,
+              //showCheckboxBranch: false,
+              //showCheckboxComment: true,
+              //showCheckboxRotate180: false,
+
+              editable: false,
+              showBranchText: true,
+              preventRedoAtBranchPoint: true,
+              autoMove: igo.WHITE,
+      });
+      </script>
+    </section>
+    <section>
+      <h2>19路盤</h2>
+      <p>19路盤を置いてみます。自由に打ってください。<a href="index.html">単独のページはこちら</a></p>
+      <script>
+      igo.insertGameViewBeforeCurrentScript(new igo.Game(19));
+      </script>
+    </section>
+  </body>
+</html>

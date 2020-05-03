@@ -475,7 +475,7 @@ class HistoryTree{
     }
     getMoveNumber(){return this.moveNumber;}
     getCurrentMove(){return this.pointer;}
-    getNextMoves(){return this.pointer.nexts;}
+    getNextMoves(){return this.pointer ? this.pointer.nexts : [];}
     getPreviousMove(){return this.pointer.prev;}
     getFirstMoves(){return this.first.nexts;}
     getRootMove(){return this.first;}

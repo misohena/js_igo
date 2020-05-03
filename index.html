@@ -7,64 +7,19 @@
     <meta name="apple-mobile-web-app-title" content="js_igo" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="stylesheet" href="igo.css" />
     <script src="igo.js"></script>
     <script src="igo_view.js"></script>
     <style>
     html { padding: 0;}
     body { padding: 0; margin: 0 8px;}
-
-    input {
-        font-size: 16px;
-    }
-    input[type="button"], input[type="submit"] {
-        -webkit-appearance: none;
-        -moz-appearance: none;
-        appearance: none;
-        border: 1px solid #aaa;
-        border-radius: 3px;
-        padding: 0.5em 1em;
-        background: #eee;
-        color: #222;
-    }
-    input[type="button"]:hover, input[type="submit"]:hover {
-        border: 1px solid #000;
-    }
-    input[type="button"][disabled], input[type="submit"][disabled] {
-        border: 1px solid #aaa;
-        color: #ccc;
-    }
-    input[type="number"] {
-        -webkit-appearance: none;
-        -moz-appearance: none;
-        appearance: none;
-        border: 1px solid #aaa;
-        border-radius: 3px;
-        padding: 0.5em;
-        background: #fff;
-        color: #111;
-        min-width: 4em;
-    }
-    /* UI top margin */
-    input, label, textarea {
-        margin-top: 0.5rem;
-    }
-    /* space between UI elements */
-    input+input, input+label, label+input, label+label {
-        margin-left: 0.75rem;
-    }
-
-    /* checkbox label */
-    label {
-        display: inline-block;
-        user-select: none;
-    }
     </style>
-    <title>Go</title>
+    <title>碁盤 - js_igo</title>
   </head>
   <body>
 
-    <script type="text/javascript">
-    view = new igo.GameView();
+    <script>
+    igo.insertGameViewBeforeCurrentScript();
     </script>
   </body>
 </html>

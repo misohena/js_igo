@@ -553,10 +553,24 @@ igo.BoardElement = BoardElement;
 // GameView
 //
 
+function insertGameViewBeforeCurrentScript(game, opt){
+    const script = document.currentScript;
+    if(script){
+        const gameView = new GameView(null, game, opt);
+        script.parentNode.insertBefore(gameView.rootElement, script);
+        // fitting to added place
+        gameView.fitBoardSizeToWindowAndParent();
+        return gameView;
+    }
+    else{
+        return null;
+    }
+}
+igo.insertGameViewBeforeCurrentScript = insertGameViewBeforeCurrentScript;
+
 class GameView{
     constructor(parent, game, opt){
-        this.parent = parent = parent || document.body;
-
+        // Options
         function toBool(v, defaultValue){
             return v !== undefined ? v : defaultValue;
         }
@@ -564,14 +578,51 @@ class GameView{
         this.editable = toBool(opt.editable, true);
         this.showBranches = toBool(opt.showBranchText, false);
         this.rotate180 = toBool(opt.rotate180, false);
+        this.preventRedoAtBranchPoint = toBool(opt.preventRedoAtBranchPoint, false);
+        this.autoMove = opt.autoMove; //BLACK, WHITE, true, false
         const showUI = toBool(opt.showUI, true);
-        this.showComment = toBool(opt.showComment, showUI);
+        this.showComment = toBool(opt.showComment, false);
         this.showMenu = toBool(opt.showMenu, showUI);
         this.showPassResign = toBool(opt.showPassResign, showUI);
         this.showMoveController = this.showMenu || this.showPassResign;
-        this.showHistoryController = toBool(opt.showHistoryController, showUI);
+        const showVisibilitySettings = toBool(opt.showVisibilitySettings, showUI);
+        this.showCheckboxBranch = toBool(opt.showCheckboxBranch, showVisibilitySettings);
+        this.showCheckboxComment = toBool(opt.showCheckboxComment, showVisibilitySettings);
+        this.showCheckboxRotate180 = toBool(opt.showCheckboxRotate180, showVisibilitySettings);
+        this.showHistoryController = toBool(opt.showHistoryController, showUI || this.showCheckboxBranch || this.showCheckboxComment || this.showCheckboxRotate180);
         this.showGameStatus = toBool(opt.showGameStatus, showUI);
 
+        // Mode
+        this.mode = null;
+        this.modeStack = [];
+
+        // Root Element
+        this.rootElement = createElement("div", {"class":"igo-game"}, [
+            // Top Bar
+            this.topBar = createElement("div", {"class":"igo-top-bar"}, [
+                // Game Status Bar
+                this.createGameStatusBar()
+            ]),
+
+            // Board Wrapper
+            this.boardWrapperRow = createElement("div", {//for board size fitting to parent width
+                style: "padding:0; margin:0;"}, [
+                    this.boardWrapperBack = createElement("div", {//for swipe & pinch operation
+                        style: "padding:0; margin:0; display: inline-block;"
+                    })
+                ]),
+
+            // Bottom Bar
+            this.bottomBar = createElement("div", {"class":"igo-bottom-bar"}, [
+            ])
+        ], parent);
+
+        // Main UI (Move Mode only?)
+        this.createMoveController();
+        this.createHistoryController();
+        this.createCommentTextArea();
+
+        // Set Game Model
         this.resetGame(game || new Game(9));
     }
 
@@ -580,33 +631,16 @@ class GameView{
         const w = this.w = this.model.board.w;
         const h = this.h = this.model.board.h;
 
-        this.mode = null;
-
-        // Recreate Root Element
-        if(this.rootElement){
-            this.rootElement.parentNode.removeChild(this.rootElement);
-            this.rootElement = null;
+        // discard old board
+        if(this.boardElement){
+            this.boardElement.element.parentNode.removeChild(this.boardElement.element);
+            this.boardElement = null;
         }
-        const rootElement = this.rootElement = createElement(
-            "div", {"class":"igo-game"}, [], this.parent);
-
-        // Top Bar
-        this.topBar = createElement("div", {"class":"igo-top-bar"}, [], rootElement);
-            // Game Status Bar
-        this.createGameStatusBar(); //set this.statusText
 
         // Board
-        const boardWrapperRow = this.boardWrapperRow = createElement("div", {
-            style: "padding:0; margin:0;"
-        }, [], rootElement); //for board size fitting to parent width
-
-        const boardWrapperBack = this.boardWrapperBack = createElement("div", {
-            style: "padding:0; margin:0; display: inline-block;"
-        }, [], boardWrapperRow); //for swipe & pinch operation
-
         const boardElement = this.boardElement = new BoardElement(w, h);
         boardElement.element.style.verticalAlign = "top";
-        boardWrapperBack.appendChild(boardElement.element);
+        this.boardWrapperBack.appendChild(boardElement.element);
 
         boardElement.onIntersectionClick = (x, y, e)=>{
             this.onIntersectionClick(this.toModelPosition(x, y), e);
@@ -619,14 +653,6 @@ class GameView{
         this.createPreviewStone();
 
         this.updateViewArea();
-
-        // Bottom Bar
-        this.bottomBar = createElement("div", {"class":"igo-bottom-bar"}, [], rootElement);
-            // Move Controller
-        this.createMoveController();
-            // History Controller
-        this.createHistoryController();
-        this.createCommentTextArea();
 
         //
         this.keepBoardScale();
@@ -732,9 +758,6 @@ class GameView{
         }
     }
     pushMode(mode){
-        if(!this.modeStack){
-            this.modeStack = [];
-        }
         this.modeStack.push(this.mode);
         this.startMode(mode);
     }
@@ -818,9 +841,12 @@ class GameView{
     }
 
     move(pos){
-        if(!this.editable){ // same move only if not editable
+        if(this.isAutoTurn()){
+            return; // current turn is auto player
+        }
+        if(!this.editable){
             if(!this.model.history.findNextMove(pos)){
-                return;
+                return; // same move only if not editable
             }
         }
         if(pos == POS_PASS){
@@ -835,6 +861,8 @@ class GameView{
             }
         }
         this.update();
+
+        this.scheduleAutoMove();
     }
 
     putStone(pos){
@@ -845,6 +873,23 @@ class GameView{
     }
     resign(){
         this.move(POS_RESIGN);
+    }
+
+    isAutoTurn(){
+        return typeof(this.autoMove) == "boolean" ? this.autoMove :
+            typeof(this.autoMove) == "number" ? this.model.getTurn() == this.autoMove :
+            false;
+    }
+    scheduleAutoMove(){
+        if(this.isAutoTurn() && this.model.history.getCurrentMove().lastVisited){
+            setTimeout(()=>{
+                if(this.isAutoTurn()){
+                    this.model.redo();
+                    this.update();
+                    this.scheduleAutoMove();
+                }
+            }, 750);
+        }
     }
 
     //onAnalyzeButtonClick(){
@@ -949,12 +994,22 @@ class GameView{
         }
     }
 
-    // keep board size to fit the window size
+    // keep board size to fit the window size, parent box
     keepBoardScale(){
         window.addEventListener("resize", e=>this.fitBoardSizeToWindowAndParent(), false);
         this.fitBoardSizeToWindowAndParent();
+
+        if(window.ResizeObserver){
+            const resizeObserver = new ResizeObserver(entries =>{
+                this.fitBoardSizeToWindowAndParent();
+            });
+            resizeObserver.observe(this.boardWrapperRow);
+        }
     }
     fitBoardSizeToWindowAndParent(){
+        if(!this.boardWrapperRow || !this.boardElement){
+            return;
+        }
         // control-bar height
         const mainUIHeight = [
             this.topBar,
@@ -973,7 +1028,7 @@ class GameView{
         const wrapperW = wrapperRect.right-wrapperRect.left;
 
         // max board size
-        const maxBoardW = Math.min(windowW, wrapperW); //ウィンドウの幅か、包含divの幅
+        const maxBoardW = wrapperW > 10 ? Math.min(windowW, wrapperW) : windowW; //ウィンドウの幅か、包含divの幅
         const maxBoardH = Math.max(windowH/3, windowH-mainUIHeight); //ウィンドウの1/3か、UIの高さを除いた高さ
 
         // element size
@@ -1080,15 +1135,18 @@ class GameView{
     //
     createGameStatusBar(){
         if(!this.showGameStatus){
-            return;
+            return null;
         }
-        const statusDiv = createElement("div", {"class": "igo-control-bar"}, [
+        return createElement("div", {"class": "igo-control-bar"}, [
             this.statusText = document.createTextNode("対局")
-        ], this.topBar);
+        ]);
     }
 
     updateStatusText(){
         if(!this.statusText){
+            return;
+        }
+        if(!this.model){
             return;
         }
         const gameStatus = this.model.isFinished() ?
@@ -1115,52 +1173,62 @@ class GameView{
 
     createHistoryController(){
         if(!this.showHistoryController){
-            return;
+            return null;
         }
-        const historyDiv = this.historyController = createElement("div", {"class": "igo-control-bar"}, [], this.bottomBar);
-        const first = createButton("|<", e=>{
-            e.preventDefault();
-            this.model.undoAll();
-            this.update();
-        }, historyDiv);
-        const prev = createButton("<", e=>{
-            e.preventDefault();
-            this.model.undo();
-            this.update();
-        }, historyDiv);
-        const next = createButton(">", e=>{
-            e.preventDefault();
-            this.model.redo();
-            this.update();
-        }, historyDiv);
-        const last = createButton(">|", e=>{
-            e.preventDefault();
-            this.model.redoAll();
-            this.update();
-        }, historyDiv);
-        this.historyControllerButtons = {first, prev, next, last};
-
-        createCheckbox("分岐表示", this.showBranches, (e)=>{
-            this.showBranches = e.target.checked;
-            this.update();
-        }, historyDiv);
-        createCheckbox("コメント", this.showComment, (e)=>{
-            this.showComment = e.target.checked;
-            this.updateCommentTextAreaDisplay();
-        }, historyDiv);
-        createCheckbox("180度回転", this.rotate180, (e)=>{
-            this.rotate180 = e.target.checked;
-            this.update();
-        }, historyDiv);
+        const buttons = this.historyControllerButtons = {};
+        return this.historyController = createElement("div", {"class": "igo-control-bar"}, [
+            buttons.first = createButton("|<", e=>{
+                e.preventDefault();
+                this.model.undoAll();
+                this.update();
+            }),
+            buttons.prev = createButton("<", e=>{
+                e.preventDefault();
+                this.model.undo();
+                this.update();
+            }),
+            buttons.next = createButton(">", e=>{
+                e.preventDefault();
+                if(this.isPreventedRedo()){
+                    return;
+                }
+                this.model.redo();
+                this.update();
+            }),
+            buttons.last = createButton(">|", e=>{
+                e.preventDefault();
+                if(this.isPreventedRedo()){
+                    return;
+                }
+                this.model.redoAll();
+                this.update();
+            }),
+            this.showCheckboxBranch ? createCheckbox("分岐表示", this.showBranches, e=>{
+                this.showBranches = e.target.checked;
+                this.update();
+            }) : null,
+            this.showCheckboxComment ? createCheckbox("コメント", this.showComment, e=>{
+                this.showComment = e.target.checked;
+                this.updateCommentTextAreaDisplay();
+            }) : null,
+            this.showCheckboxRotate180 ? createCheckbox("180度回転", this.rotate180, e=>{
+                this.rotate180 = e.target.checked;
+                this.update();
+            }) : null
+        ], this.bottomBar);
     }
     updateHistoryController(){
         if(this.historyControllerButtons){
             const move = this.model.history.getCurrentMove();
             this.historyControllerButtons.first.disabled = !move.prev;
             this.historyControllerButtons.prev.disabled = !move.prev;
-            this.historyControllerButtons.next.disabled = !move.lastVisited;
-            this.historyControllerButtons.last.disabled = !move.lastVisited;
+            this.historyControllerButtons.next.disabled = !move.lastVisited || this.isPreventedRedo();
+            this.historyControllerButtons.last.disabled = !move.lastVisited || this.isPreventedRedo();
         }
+    }
+    isPreventedRedo(){
+        return this.preventRedoAtBranchPoint &&
+            this.model.history.getNextMoves().length >= 2;
     }
 
     updateBranchTexts(){
@@ -1174,7 +1242,7 @@ class GameView{
             this.branchTextElements.splice(0);
         }
 
-        if( ! this.showBranches){
+        if( ! this.showBranches || this.isAutoTurn()){
             return;
         }
 
@@ -1269,14 +1337,19 @@ class GameView{
     // Comment
 
     createCommentTextArea(){
-        const div = createElement("div", {"class":"igo-comment igo-control-bar"}, [], this.bottomBar);
-        const textarea = this.commentTextArea = createElement("textarea", {rows:2, style:"width:100%"}, [], div);
-        if(!this.editable){
-            textarea.disabled = true;
+        const div = createElement("div", {"class":"igo-comment igo-control-bar"}, [
+            this.commentTextArea = createElement("textarea", {rows:2, style:"width:100%"})
+        ], this.bottomBar);
+
+        if(this.editable){
+            this.commentTextArea.addEventListener("change", (e)=>this.onCommentTextAreaChange(e), false);
         }
-        textarea.addEventListener("change", (e)=>this.onCommentTextAreaChange(e), false);
+        else{
+            this.commentTextArea.disabled = true;
+        }
         this.commentTextAreaTarget = null;
         this.updateCommentTextAreaDisplay();
+        return div;
     }
 
     updateCommentTextAreaDisplay(){
@@ -1341,6 +1414,7 @@ class GameView{
                 if(!this.alive){
                     this.alive = true;
                 }
+                gameView.scheduleAutoMove();
             }
             end(){
                 if(this.alive){
