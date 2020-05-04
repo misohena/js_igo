@@ -845,8 +845,15 @@ class GameView{
     }
 
     move(pos){
-        if(this.isAutoTurn()){
-            return; // current turn is auto player
+        if(this.isAutoTurn()){ // current turn is auto player
+            const nexts = this.model.history.getNextNodes();
+            if(nexts.length <= 1){
+                return; //一本道
+            }
+            if(!nexts.find(node=>node.pos == pos)){
+                return; //分岐外の手
+            }
+            this.cancelAutoMove();
         }
         if(!this.editable){
             if(!this.model.history.findNextNode(pos)){
@@ -885,14 +892,36 @@ class GameView{
             false;
     }
     scheduleAutoMove(){
-        if(this.isAutoTurn() && this.model.history.getCurrentNode().lastVisited){
-            setTimeout(()=>{
+        if(this.isAutoTurn() && this.model.history.getNextNodes().length > 0){
+            this.autoMoveTimer = setTimeout(()=>{
+                delete this.autoMoveTimer;
                 if(this.isAutoTurn()){
+                    // rotate lastVisited
+                    const node = this.model.history.getCurrentNode();
+                    if(!node.lastVisited || node.nexts.length == 1){
+                        node.lastVisited = node.nexts[0];
+                    }
+                    else if(node.nexts.length >= 2){
+                        let index = node.nexts.indexOf(node.lastVisited);
+                        if(index >= 0){
+                            if(++index >= node.nexts.length){
+                                index = 0;
+                            }
+                            node.lastVisited = node.nexts[index];
+                        }
+                    }
+                    // redo
                     this.model.redo();
                     this.update();
                     this.scheduleAutoMove();
                 }
             }, 750);
+        }
+    }
+    cancelAutoMove(){
+        if(this.autoMoveTimer !== undefined){
+            clearTimeout(this.autoMoveTimer);
+            delete this.autoMoveTimer;
         }
     }
 
@@ -1246,7 +1275,7 @@ class GameView{
             this.branchTextElements.splice(0);
         }
 
-        if( ! this.showBranches || this.isAutoTurn()){
+        if( ! this.showBranches || (this.isAutoTurn() && this.model.history.getNextNodes().length <= 1)){
             return;
         }
 
