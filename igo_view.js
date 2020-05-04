@@ -416,7 +416,6 @@ class BoardElement{
             if(intersection.elements && intersection.elements.stone){
                 intersection.elements.stone.style.pointerEvents = pointerEvents;
             }
-            intersection.state = EMPTY;
         }
     }
     putStone(x, y, color){
