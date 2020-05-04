@@ -162,7 +162,7 @@ function createPopupMenu(x, y, items, parent){
     menuDiv.style.top = y + "px";
 }
 
-function createTextDialog(message, text, onOk, parent){
+function createTextDialog(message, text, children, onOk, parent){
     let textarea;
     const dialog = createDialogWindow({}, [
         createElement("div", {}, message),
@@ -172,6 +172,7 @@ function createTextDialog(message, text, onOk, parent){
                    "max-width:100%;"+
                    "width:40em;"+
                    "height:4em;"}),
+        children,
         createElement("div", {"class":"igo-control-bar", style:"text-align:right"},
             onOk ? [
                 createButton("OK", ()=>{close(); onOk();}),
@@ -1322,17 +1323,23 @@ class GameView{
     // SGF
 
     exportSGF(){
-        createTextDialog(
+        const {dialog, textarea} = createTextDialog(
             "Export SGF",
-            this.model.toSGF());
-        this.update();
+            this.model.toSGF(),
+            createElement("div", {}, [
+                createCheckbox("現在の盤面から始まる棋譜を出力", false, e=>{
+                    textarea.value = this.model.toSGF(e.target.checked);
+                })
+            ])
+        );
     }
     importSGF(){
-        const dialog = createTextDialog(
+        const {dialog, textarea} = createTextDialog(
             "Import SGF",
             "",
+            [],
             ()=>{
-                const game = Game.fromSGF(dialog.textarea.value);
+                const game = Game.fromSGF(textarea.value);
                 this.resetGame(game);
             });
     }

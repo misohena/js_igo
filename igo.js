@@ -479,6 +479,16 @@ class HistoryNode{
         this.lastVisited = null; //?
         // this.comment = <string>
         // this.props = {<id>: {value:<value>, inherit:<boolean>}, ...}
+        // this.setup = {intersections: [{pos, oldState, newState},...] }
+    }
+    shallowClone(){
+        const node = new HistoryNode(this.prev, this.pos, this.removedStones, this.koPosOld, this.koPosNew);
+        node.nexts = this.nexts;
+        node.lastVisited = this.lastVisited;
+        if(this.comment !== undefined){node.comment = this.comment;}
+        if(this.props !== undefined){node.props = this.props;}
+        if(this.setup !== undefined){node.setup = this.setup;}
+        return node;
     }
     // Node Types
     isMove(){return this.pos != NPOS;}
@@ -574,8 +584,9 @@ class HistoryNode{
         return this.setup;
     }
     setSetup(intersections){
-        const setup = this.acquireSetup();
-        setup.intersections = intersections;
+        // do not recycle current this.setup object.
+        // see shallowClone() usage in toSGF()
+        this.setup = {intersections};
     }
     addIntersectionChange(pos, oldState, newState){
         const intersections = this.acquireSetup().intersections;
@@ -905,7 +916,7 @@ class Game{
 
     // SGF
 
-    toSGF(){
+    toSGF(fromCurrentNode){
         const board = this.board;
         function toPointLetter(n){
             if(!(n >= 0 && n <= 51)){
@@ -925,18 +936,40 @@ class Game{
             return color == BLACK ? "B" : color == WHITE ? "W" : "E";
         }
 
+        // determine start node
+        let startNode;
+        let firstTurn;
+        if(fromCurrentNode){
+            // make setup property
+            const emptyBoard = new Board(board.w, board.h);
+            const intersectionChanges = enumerateBoardChanges(emptyBoard, board);
+            // clone current node
+            startNode = this.history.getCurrentNode().shallowClone();
+            startNode.prev = null;
+            startNode.pos = NPOS;
+            startNode.removedStones = null;
+            startNode.koPosOld = NPOS;
+            startNode.setSetup(intersectionChanges); //setSetupはclone元の状態を変更しない、はず。
+            // first turn
+            firstTurn = this.getTurn();
+        }
+        else{
+            startNode = this.history.getRootNode();
+            firstTurn = this.firstTurn;
+        }
+
         // Root Node
         let rootProperties =
             "GM[1]" +
-            "SZ[" + (this.board.w == this.board.h ? this.board.w : this.board.w + ":" + this.board.h) + "]" +
-            (this.firstTurn == WHITE ? "PL[W]" : ""); ///@todo PLはsetupプロパティとして扱う
+            "SZ[" + (board.w == board.h ? board.w : board.w + ":" + board.h) + "]" +
+            (firstTurn == WHITE ? "PL[W]" : ""); ///@todo PLはsetupプロパティとして扱う
 
         //
         let str = "";
         let moveNumber = 0;
-        let turn = this.firstTurn;
+        let turn = firstTurn;
 
-        this.history.getRootNode().visitAllNodes(
+        startNode.visitAllNodes(
             (node)=>{ //enter
                 if(node.isResign()){
                     return; //ignore resign
@@ -961,7 +994,7 @@ class Game{
                 if(node.hasSetup()){
                     const setup = node.getSetup();
                     if(setup && setup.intersections){
-                        for(const change of compressBoardChanges(setup.intersections, this.board)){
+                        for(const change of compressBoardChanges(setup.intersections, board)){
                             // AB, AW, AE
                             str += "A" + toSGFColor(change.state) + "[" +
                                 toSGFPointXY(change.left, change.top) +
