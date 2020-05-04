@@ -585,6 +585,7 @@ class GameView{
         this.autoMove = opt.autoMove; //BLACK, WHITE, true, false
         const showUI = toBool(opt.showUI, true);
         this.showComment = toBool(opt.showComment, false);
+        this.commentLocation = opt.commentLocation; //TOP, BOTTOM
         this.showMenu = toBool(opt.showMenu, showUI);
         this.showPassResign = toBool(opt.showPassResign, showUI);
         this.showMoveController = this.showMenu || this.showPassResign;
@@ -1348,14 +1349,14 @@ class GameView{
 
     createCommentTextArea(){
         const div = createElement("div", {"class":"igo-comment igo-control-bar"}, [
-            this.commentTextArea = createElement("textarea", {rows:2, style:"width:100%"})
-        ], this.bottomBar);
+            this.commentTextArea =
+                this.editable ?
+                createElement("textarea", {"class":"igo-comment-textarea"}) :
+                createElement("pre", {"class":"igo-comment-pre"})
+        ], this.commentLocation == "TOP" ? this.topBar : this.bottomBar);
 
         if(this.editable){
             this.commentTextArea.addEventListener("change", (e)=>this.onCommentTextAreaChange(e), false);
-        }
-        else{
-            this.commentTextArea.disabled = true;
         }
         this.commentTextAreaTarget = null;
         this.updateCommentTextAreaDisplay();
@@ -1375,14 +1376,20 @@ class GameView{
             this.updateCommentPropertyFromTextArea();
 
             const node = this.model.history.getCurrentNode();
+            let newText = "";
             if(node){
                 this.commentTextAreaTarget = node;
-                this.commentTextArea.value =
-                    node.hasComment() ? node.getComment() : "";
+                newText = node.hasComment() ? node.getComment() : "";
             }
             else{
                 this.commentTextAreaTarget = null;
-                this.commentTextArea.value = "";
+                newText = "";
+            }
+            if(this.editable){
+                this.commentTextArea.value = newText;
+            }
+            else{
+                this.commentTextArea.innerHTML = newText;
             }
         }
     }

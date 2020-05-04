@@ -19,12 +19,13 @@
       <p>詰碁を作りました。</p>
       <script>
       igo.insertGameViewBeforeCurrentScript(
-          igo.Game.fromSGF("(;GM[1]SZ[9]VW[da:id]C[黒番です。さあどこに打ちますか？]AW[ea]AB[fa]AW[eb]AB[fb:ib]AW[ec:ic](;B[ga];W[ha];B[ia];W[ha]C[全部取られちゃった！])(;B[ha]C[白はもう打てません。成功！])(;B[ia];W[ga];B[ha];W[ga]C[全部取られちゃった！]))"), {
+          igo.Game.fromSGF("(;GM[1]SZ[9]VW[da:id]C[黒番です。さあどこに打ちますか？\nさあさあ]AW[ea]AB[fa]AW[eb]AB[fb:ib]AW[ec:ic](;B[ga];W[ha];B[ia];W[ha]C[全部取られちゃった！])(;B[ha]C[白はもう打てません。成功！])(;B[ia];W[ga];B[ha];W[ga]C[全部取られちゃった！]))"), {
               showUI: false,
               //showGameStatus: false,
               //showMenu: false,
               //showPassResign: false,
               showComment: true,
+              commentLocation: "TOP",
               showHistoryController: true,
               showVisibilitySettings: false,
               //showCheckboxBranch: false,
