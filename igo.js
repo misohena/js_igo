@@ -906,16 +906,20 @@ class Game{
     // SGF
 
     toSGF(){
-        function toLetter(n){
-            if(n >= 0 && n <= 25){
-                return String.fromCharCode(0x61 + n); //a~z
-            }
-            else if(n >= 26 && n <= 51){
-                return String.fromCharCode(0x41 - 26 + n); //A~Z
-            }
-            else{
+        const board = this.board;
+        function toPointLetter(n){
+            if(!(n >= 0 && n <= 51)){
                 throw new Error("SGF coordinates out of range : " + n);
             }
+            // 0~25:a~z(0x61~)
+            //26~51:A~Z(0x41~)
+            return String.fromCharCode(n<26 ? 0x61+n : 0x41-26+n);
+        }
+        function toSGFPointXY(x, y){
+            return toPointLetter(x) + toPointLetter(y);
+        }
+        function toSGFPoint(pos){
+            return toSGFPointXY(board.toX(pos), board.toY(pos));
         }
         function toSGFColor(color){
             return color == BLACK ? "B" : color == WHITE ? "W" : "E";
@@ -949,9 +953,7 @@ class Game{
                     str +=
                         toSGFColor(turn) +
                         "[" +
-                        (node.isPass() ? "" :
-                         toLetter(this.board.toX(node.pos)) +
-                         toLetter(this.board.toY(node.pos))) +
+                        (node.isPass() ? "" : toSGFPoint(node.pos)) +
                         "]";
                     ++moveNumber;
                     turn = getOppositeColor(turn);
@@ -962,9 +964,9 @@ class Game{
                         for(const change of compressBoardChanges(setup.intersections, this.board)){
                             // AB, AW, AE
                             str += "A" + toSGFColor(change.state) + "[" +
-                                toLetter(change.left) + toLetter(change.top) +
+                                toSGFPointXY(change.left, change.top) +
                                 (change.left != change.right || change.top != change.bottom ?
-                                 ":" + toLetter(change.right) + toLetter(change.bottom) : "") + "]";
+                                 ":" + toSGFPointXY(change.right, change.bottom) : "") + "]";
                         }
                     }
                 }
