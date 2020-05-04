@@ -468,35 +468,155 @@ class HistoryUtil {
     }
 }
 
+class HistoryNode{
+    constructor(prev, pos, removedStones, koPosOld, koPosNew){
+        this.prev = prev;
+        this.nexts = [];
+        this.pos = pos;
+        this.removedStones = removedStones;
+        this.koPosOld = koPosOld;
+        this.koPosNew = koPosNew;
+        this.lastVisited = null; //?
+        // this.comment = <string>
+        // this.props = {<id>: {value:<value>, inherit:<boolean>}, ...}
+    }
+    // Node Types
+    isMove(){return this.pos != NPOS;}
+    isPass(){return this.pos == POS_PASS;}
+    isResign(){return this.pos == POS_PASS;}
+    isPlace(){return isIntersectionPosition(this.pos);}
+
+    // Prev Node
+    isRoot(){return !this.prev;}
+    getRoot(){
+        let node = this; while(node.prev){node = node.prev;}
+        return node;
+    }
+    getNumberOfSiblings(){
+        return this.prev ? this.prev.nexts.length : 0;
+    }
+    getMoveNumber(){
+        let num = 0;
+        for(let node = this; node; node = node.prev){
+            if(node.isMove()){
+                ++num;
+            }
+        }
+        return num;
+    }
+
+    // Next Nodes
+    findNext(pos){return this.nexts.find(node=>node.pos == pos);}
+    deleteNext(pos){
+        const index = this.nexts.findIndex(node=>node.pos == pos);
+        if(index >= 0){
+            const node = this.nexts[index];
+            this.nexts.splice(index, 1);
+            // lastVisitedが指している手が削除されたときの対応
+            if(this.lastVisited === node){
+                ///@todo [0]にしてしまっていい？　いっそnullの方がいい？
+                this.lastVisited = this.nexts.length == 0
+                    ? null : this.nexts[0];
+            }
+        }
+    }
+    changeNextOrder(pos, delta){
+        const index = this.nexts.findIndex(move=>move.pos == pos);
+        if(index >= 0){
+            const move = this.nexts[index];
+            this.nexts.splice(index, 1);
+            const newIndex = Math.min(Math.max(index + delta, 0), this.nexts.length);
+            this.nexts.splice(newIndex, 0, move);
+        }
+    }
+    visitAllNodes(enter, leave){
+        if(enter){enter(this);}
+        for(const next of this.nexts){
+            next.visitAllNodes(enter, leave);
+        }
+        if(leave){leave(this);}
+    }
+
+    // Properties
+    addProperty(id, value, inherit){
+        if(!this.props){this.props = {};}
+        this.props[id] = {value, inherit:inherit===true};
+    }
+    hasProperty(id, inherit){
+        return this.props ? this.props.hasOwnProperty(id) :
+            // if inherit is true, look back prev
+            inherit && this.prev ? this.prev.hasProperty(id, inherit) :
+            false;
+    }
+    getProperty(id, inherit){
+        return this.props ? this.props[id] :
+            // if inherit is true, look back prev
+            inherit && this.prev ? this.prev.getProperty(id, inherit) :
+            false;
+    }
+    removeProperty(id){
+        if(this.props){
+            delete this.props[id];
+        }
+    }
+    // Comment
+    hasComment(){return typeof(this.comment) == "string";}
+    getComment(){return this.comment;}
+    setComment(str){this.comment = str;}
+    removeComment(str){delete this.comment;}
+    // Setup
+    hasSetup(){return !!this.setup;}
+    getSetup(){return this.setup;}
+    acquireSetup(){
+        if(!this.setup){
+            this.setup = {intersections:[]}; //[{pos, oldState, newState},...]
+        }
+        return this.setup;
+    }
+    setSetup(intersections){
+        const setup = this.acquireSetup();
+        setup.intersections = intersections;
+    }
+    addIntersectionChange(pos, oldState, newState){
+        const intersections = this.acquireSetup().intersections;
+        let index;//lower bound
+        for(index = 0; index < intersections.length && intersections[index].pos < pos; ++index);
+        if(index == intersections.length || pos < intersections[index].pos){
+            intersections.splice(index, 0, {pos, oldState, newState}); //new change
+        }
+        else{
+            //pos == intersections[index].pos
+            if(intersections[index].oldState == newState){
+                intersections.splice(index, 1); //discard change
+            }
+            else{
+                intersections[index].newState = newState; //merge changes
+            }
+        }
+    }
+}
+
 class HistoryTree{
     constructor(){
         this.moveNumber = 0;
-        this.pointer = this.first = {prev:null, nexts:[], lastVisited:null};
+        this.pointer = this.first = new HistoryNode(null, NPOS, null, NPOS, NPOS);
     }
     getMoveNumber(){return this.moveNumber;}
-    getCurrentMove(){return this.pointer;}
-    getNextMoves(){return this.pointer ? this.pointer.nexts : [];}
-    getPreviousMove(){return this.pointer.prev;}
-    getFirstMoves(){return this.first.nexts;}
-    getRootMove(){return this.first;}
-    findNextMove(pos){
-        return this.pointer ?
-            this.pointer.nexts.find(move=>move.pos == pos) : null;
+    getCurrentNode(){return this.pointer;}
+    getNextNodes(){return this.pointer ? this.pointer.nexts : [];}
+    getPreviousNode(){return this.pointer.prev;}
+    getFirstNodes(){return this.first.nexts;}
+    getRootNode(){return this.first;}
+    findNextNode(pos){return this.pointer ?this.pointer.findNext(pos) : null;}
+
+    setCommentToCurrentNode(text){
+        this.pointer.setComment(text);
+    }
+    setPropertyToCurrentNode(id, value, inherit){
+        this.pointer.addProperty(id, value, inherit);
     }
 
-    setCommentToCurrentMove(text){
-        if(this.pointer){
-            this.pointer.comment = text;
-        }
-    }
-    setSGFPropertyToCurrentMove(id, value, inherit){
-        if(this.pointer){
-            if(!this.pointer.sgfProps){
-                this.pointer.sgfProps = {};
-            }
-            this.pointer.sgfProps[id] = {value, inherit};
-        }
-    }
+    // Move
 
     pushPass(koPosOld){
         this.push(POS_PASS, null, koPosOld, NPOS);
@@ -504,15 +624,14 @@ class HistoryTree{
     pushResign(koPos){
         this.push(POS_RESIGN, null, koPos, koPos); //keep koPos, do not rotate a turn
     }
-
     push(pos, removedStones, koPosOld, koPosNew){
-        const moveSamePos = this.pointer.nexts.find(move=>move.pos == pos);
+        const moveSamePos = this.pointer.findNext(pos);
         if(moveSamePos){
             this.pointer.lastVisited = moveSamePos;
             this.pointer = moveSamePos;
         }
         else{
-            const newMove = {prev:this.pointer, nexts:[], lastVisited:null, pos, removedStones, koPosOld, koPosNew};
+            const newMove = new HistoryNode(this.pointer, pos, removedStones, koPosOld, koPosNew);
             this.pointer.nexts.push(newMove);
             this.pointer.lastVisited = newMove;
             this.pointer = newMove;
@@ -521,6 +640,9 @@ class HistoryTree{
             ++this.moveNumber;
         }
     }
+
+    // Undo/Redo
+
     undo(board, game){
         if( ! this.pointer.prev){
             return false;
@@ -579,54 +701,116 @@ class HistoryTree{
     // Tree Operations
 
     deleteBranch(pos){
-        const index = this.pointer.nexts.findIndex(move=>move.pos == pos);
-        if(index >= 0){
-            const move = this.pointer.nexts[index];
-            this.pointer.nexts.splice(index, 1);
-            // lastVisitedが指している手が削除されたときの対応
-            if(this.pointer.lastVisited === move){
-                ///@todo [0]にしてしまっていい？　いっそnullの方がいい？
-                this.pointer.lastVisited = this.pointer.nexts.length == 0
-                    ? null : this.pointer.nexts[0];
-            }
-        }
+        this.pointer.deleteNext(pos);
     }
     changeBranchOrder(pos, delta){
-        const index = this.pointer.nexts.findIndex(move=>move.pos == pos);
-        if(index >= 0){
-            const move = this.pointer.nexts[index];
-            this.pointer.nexts.splice(index, 1);
-            const newIndex = Math.min(Math.max(index + delta, 0), this.pointer.nexts.length);
-            this.pointer.nexts.splice(newIndex, 0, move);
-        }
-    }
-
-    visitAllMoves(enter, leave){
-        const stack = [];
-        let curr = {node:this.first, children:this.first.nexts, childIndex:0};
-        for(;;){
-            if(curr.childIndex < curr.children.length){
-                const child = curr.children[curr.childIndex];
-                enter(child, curr.childIndex, curr.children.length, stack.length);
-
-                stack.push(curr);
-                curr = {node:child, children:child.nexts, childIndex:0};
-            }
-            else{
-                if(stack.length <= 0){
-                    break;
-                }
-                const parent = stack.pop();
-                leave(curr.node, parent.childIndex, parent.children.length, stack.length);
-                curr = parent;
-                ++curr.childIndex;
-            }
-        }
+        this.pointer.changeNextOrder(pos, delta);
     }
 }
 igo.HistoryTree = HistoryTree;
 
 
+function enumerateBoardChanges(oldBoard, newBoard){ //diffBoard
+    const newChanges = [];
+    for(let y = 0; y < newBoard.h; ++y){
+        for(let x = 0; x < newBoard.w; ++x){
+            const pos = newBoard.toPosition(x, y);
+            const oldState = (x < oldBoard.w && y < oldBoard.h) ? oldBoard.getAt(oldBoard.toPosition(x, y)) : EMPTY;
+            const newState = newBoard.getAt(pos);
+            if(oldState != newState){
+                newChanges.push({pos, oldState, newState});
+            }
+        }
+    }
+    return newChanges;
+}
+igo.enumerateBoardChanges = enumerateBoardChanges;
+
+function mergeBoardChanges(oldChanges, newChanges){
+    const mergedChanges = [];
+    let oldIndex = 0;
+    let newIndex = 0;
+    while(oldIndex < oldChanges.length && newIndex < newChanges.length){
+        if(oldChanges[oldIndex].pos < newChanges[newIndex].pos){
+            mergedChanges.push(oldChanges[oldIndex]);
+            ++oldIndex;
+        }
+        else if(newChanges[newIndex].pos < oldChanges[oldIndex].pos){
+            mergedChanges.push(newChanges[newIndex]);
+            ++newIndex;
+        }
+        else{
+            if(oldChanges[oldIndex].oldState != newChanges[newIndex].newState){
+                mergedChanges.push({
+                    pos: oldChanges[oldIndex].pos, //==new.pos
+                    oldState: oldChanges[oldIndex].oldState,
+                    newState: newChanges[newIndex].newState});
+            }
+            else{
+                //discard change
+            }
+        }
+    }
+    while(oldIndex < oldChanges.length){
+        mergedChanges.push(oldChanges[oldIndex++]);
+    }
+    while(newIndex < newChanges.length){
+        mergedChanges.push(newChanges[newIndex++]);
+    }
+    return mergedChanges;
+}
+igo.mergeBoardChanges = mergeBoardChanges;
+
+function compressBoardChanges(changes, board){
+    // changes = [{pos, oldState, newState}, ...]
+    // return [{state, left, top, right, bottom}, ...]
+
+    // 横方向に連続している同一交点状態(EMPTY,BLACK,WHITE)への変更をまとめる。
+    const intersections = new Array(board.getIntersectionCount());
+    for(const c of changes){
+        const x = board.toX(c.pos);
+        const y = board.toY(c.pos);
+        const left = board.leftOf(c.pos);
+        const leftIsect = left != NPOS ? intersections[left] : null;
+        if(leftIsect && leftIsect.state == c.newState){
+            leftIsect.right = x;
+            intersections[c.pos] = leftIsect;
+        }
+        else{
+            intersections[c.pos] = {state:c.newState, left:x, top:y, right:x, bottom:y};
+        }
+    }
+    // 縦方向に同じ状態、横幅のものをまとめる。
+    for(let y = 1; y < board.h; ++y){
+        for(let x = 0; x < board.w; ++x){
+            let pos = board.toPosition(x, y);
+            const currIsect = intersections[pos];
+            if(currIsect){
+                const above = board.above(pos);
+                const aboveIsect = intersections[above];
+                if(aboveIsect &&
+                   aboveIsect.state == currIsect.state &&
+                   aboveIsect.left == currIsect.left &&
+                   aboveIsect.right == currIsect.right){
+                    aboveIsect.bottom = y;
+                    for(; x <= aboveIsect.right; ++x, pos = board.rightOf(pos)){
+                        intersections[pos] = aboveIsect;
+                    }
+                }
+            }
+        }
+    }
+    // unique
+    const compressedChanges = [];
+    for(const isect of intersections){
+        if(isect){
+            if(compressedChanges.indexOf(isect) < 0){
+                compressedChanges.push(isect);
+            }
+        }
+    }
+    return compressedChanges;
+}
 
 //
 // Game Model
@@ -684,7 +868,7 @@ class Game{
 
     pass(){
         if( ! this.finished){
-            const prevMoveIsPass = this.history.getCurrentMove().pos == POS_PASS;
+            const prevMoveIsPass = this.history.getCurrentNode().pos == POS_PASS;
             this.board.pass(this.history);
 
             if(prevMoveIsPass){
@@ -717,7 +901,7 @@ class Game{
     redoAll(){this.history.redoAll(this.board, this);}
     backToMove(pos){this.history.backToMove(pos, this.board, this);}
 
-    setCommentToCurrentMove(text){this.history.setCommentToCurrentMove(text);}
+    setCommentToCurrentNode(text){this.history.setCommentToCurrentNode(text);}
 
     // SGF
 
@@ -733,64 +917,75 @@ class Game{
                 throw new Error("SGF coordinates out of range : " + n);
             }
         }
+        function toSGFColor(color){
+            return color == BLACK ? "B" : color == WHITE ? "W" : "E";
+        }
 
         // Root Node
-        let rootNode = ";" +
+        let rootProperties =
             "GM[1]" +
             "SZ[" + (this.board.w == this.board.h ? this.board.w : this.board.w + ":" + this.board.h) + "]" +
-            (this.firstTurn == WHITE ? "PL[W]" : "") +
-            (this.history.getRootMove().comment ? "C[" + this.history.getRootMove().comment + "]" : "");
-        this.undoAll(); ///@todo できれば変えたくない。
-        for(let pos = 0; pos < this.board.getIntersectionCount(); ++pos){
-            const intersection = this.board.getAt(pos);
-            if(intersection == BLACK || intersection == WHITE){
-                rootNode += "A" + (intersection == BLACK ? "B" : "W") + "[" +
-                    toLetter(this.board.toX(pos)) +
-                    toLetter(this.board.toY(pos)) + "]";
-            }
-        }
+            (this.firstTurn == WHITE ? "PL[W]" : ""); ///@todo PLはsetupプロパティとして扱う
 
         //
         let str = "";
         let moveNumber = 0;
         let turn = this.firstTurn;
-        this.history.visitAllMoves(
-            (move,indexSiblings,numSiblings,level)=>{ //enter
-                if(move.pos == POS_RESIGN){
+
+        this.history.getRootNode().visitAllNodes(
+            (node)=>{ //enter
+                if(node.isResign()){
                     return; //ignore resign
                 }
-                if(numSiblings > 1){
+                if(node.getNumberOfSiblings() > 1){
                     str += "(";
                 }
-                str += ";";
-                if(move.pos != NPOS){
+                str += ";"; //start node
+                if(node.isRoot()){
+                    str += rootProperties;
+                }
+                if(node.isMove()){
+                    // B, W
                     str +=
-                        (turn == BLACK ? "B" : "W") +
+                        toSGFColor(turn) +
                         "[" +
-                        (move.pos == POS_PASS ? "" :
-                         toLetter(this.board.toX(move.pos)) +
-                         toLetter(this.board.toY(move.pos))) +
+                        (node.isPass() ? "" :
+                         toLetter(this.board.toX(node.pos)) +
+                         toLetter(this.board.toY(node.pos))) +
                         "]";
                     ++moveNumber;
                     turn = getOppositeColor(turn);
                 }
-                if(move.comment){
-                    str += "C[" + move.comment + "]";
+                if(node.hasSetup()){
+                    const setup = node.getSetup();
+                    if(setup && setup.intersections){
+                        for(const change of compressBoardChanges(setup.intersections, this.board)){
+                            // AB, AW, AE
+                            str += "A" + toSGFColor(change.state) + "[" +
+                                toLetter(change.left) + toLetter(change.top) +
+                                (change.left != change.right || change.top != change.bottom ?
+                                 ":" + toLetter(change.right) + toLetter(change.bottom) : "") + "]";
+                        }
+                    }
+                }
+                if(node.hasComment()){
+                    // C
+                    str += "C[" + node.getComment() + "]";
                 }
             },
-            (move,indexSiblings,numSiblings,level)=>{ //leave
-                if(move.pos == POS_RESIGN){
+            (node)=>{ //leave
+                if(node.isResign()){
                     return; //ignore resign
                 }
-                if(numSiblings > 1){
+                if(node.getNumberOfSiblings() > 1){
                     str += ")";
                 }
                 --moveNumber;
                 turn = getOppositeColor(turn);
-            },
-        );
-        return "(" + rootNode + str + ")";
+            });
+        return "(" + str + ")";
     }
+
 
     static fromSGF(str){
         const collection = parseSGF(str);
@@ -871,7 +1066,10 @@ class Game{
                             const points = parseSGFComposedPoint(value, w, h);
                             for(const pos of points){
                                 if(isValidPosition(pos, w, h)){
-                                    game.setIntersectionStateForced(pos, pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY);
+                                    const oldState = game.board.getAt(pos);
+                                    const newState = pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY;
+                                    game.history.getCurrentNode().addIntersectionChange(pos, oldState, newState);
+                                    game.setIntersectionStateForced(pos, newState);
                                 }
                             }
                         }
@@ -889,13 +1087,13 @@ class Game{
                         break;
                     // Node Annotation Properties
                     case "C":
-                        game.setCommentToCurrentMove(parseSGFText(pvalues[0]));
+                        game.setCommentToCurrentNode(parseSGFText(pvalues[0]));
                         break;
                     // Miscellaneous Properties
                     case "VW":
                         {
                             const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
-                            game.history.setSGFPropertyToCurrentMove("VW", points, true); //inherit (to subsequences, subtrees)
+                            game.history.setPropertyToCurrentNode("VW", points, true); //inherit (to subsequences, subtrees)
                         }
                         break;
                     }

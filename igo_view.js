@@ -11,6 +11,8 @@ const POS_PASS = igo.POS_PASS;
 const POS_RESIGN = igo.POS_RESIGN;
 const Game = igo.Game;
 const getOppositeColor = igo.getOppositeColor;
+const enumerateBoardChanges = igo.enumerateBoardChanges;
+const mergeBoardChanges = igo.mergeBoardChanges;
 
 function clamp(x, xmin, xmax){
     return x < xmin ? xmin : x > xmax ? xmax : x;
@@ -845,7 +847,7 @@ class GameView{
             return; // current turn is auto player
         }
         if(!this.editable){
-            if(!this.model.history.findNextMove(pos)){
+            if(!this.model.history.findNextNode(pos)){
                 return; // same move only if not editable
             }
         }
@@ -881,7 +883,7 @@ class GameView{
             false;
     }
     scheduleAutoMove(){
-        if(this.isAutoTurn() && this.model.history.getCurrentMove().lastVisited){
+        if(this.isAutoTurn() && this.model.history.getCurrentNode().lastVisited){
             setTimeout(()=>{
                 if(this.isAutoTurn()){
                     this.model.redo();
@@ -968,9 +970,9 @@ class GameView{
     }
 
     updateViewArea(){
-        const move = this.model.history.getCurrentMove();
-        if(move && move.sgfProps){
-            const points = move.sgfProps["VW"];
+        const node = this.model.history.getCurrentNode();
+        if(node){
+            const points = node.getProperty("VW");
             if(points){
                 let minX = this.model.board.w - 1;
                 let minY = this.model.board.h - 1;
@@ -1219,16 +1221,16 @@ class GameView{
     }
     updateHistoryController(){
         if(this.historyControllerButtons){
-            const move = this.model.history.getCurrentMove();
-            this.historyControllerButtons.first.disabled = !move.prev;
-            this.historyControllerButtons.prev.disabled = !move.prev;
-            this.historyControllerButtons.next.disabled = !move.lastVisited || this.isPreventedRedo();
-            this.historyControllerButtons.last.disabled = !move.lastVisited || this.isPreventedRedo();
+            const node = this.model.history.getCurrentNode();
+            this.historyControllerButtons.first.disabled = !node.prev;
+            this.historyControllerButtons.prev.disabled = !node.prev;
+            this.historyControllerButtons.next.disabled = !node.lastVisited || this.isPreventedRedo();
+            this.historyControllerButtons.last.disabled = !node.lastVisited || this.isPreventedRedo();
         }
     }
     isPreventedRedo(){
         return this.preventRedoAtBranchPoint &&
-            this.model.history.getNextMoves().length >= 2;
+            this.model.history.getNextNodes().length >= 2;
     }
 
     updateBranchTexts(){
@@ -1249,7 +1251,7 @@ class GameView{
         // this.boardElement.overlaysの下にsvgのtext要素を挿入する。
         const fill = this.model.getTurn() == BLACK ? "#444" : "#eee";
 
-        const nexts = this.model.history.getNextMoves();
+        const nexts = this.model.history.getNextNodes();
         for(let i = 0; i < nexts.length; ++i){
             const move = nexts[i];
             const text =
@@ -1323,6 +1325,7 @@ class GameView{
         createTextDialog(
             "Export SGF",
             this.model.toSGF());
+        this.update();
     }
     importSGF(){
         const dialog = createTextDialog(
@@ -1364,11 +1367,11 @@ class GameView{
         if(this.commentTextArea){
             this.updateCommentPropertyFromTextArea();
 
-            const move = this.model.history.getCurrentMove();
-            if(move){
-                this.commentTextAreaTarget = move;
+            const node = this.model.history.getCurrentNode();
+            if(node){
+                this.commentTextAreaTarget = node;
                 this.commentTextArea.value =
-                    move.hasOwnProperty("comment") ? move.comment : "";
+                    node.hasComment() ? node.getComment() : "";
             }
             else{
                 this.commentTextAreaTarget = null;
@@ -1387,13 +1390,13 @@ class GameView{
         if(this.commentTextAreaTarget){
             const commentNew = this.commentTextArea.value;
             if(commentNew){
-                if(commentNew != this.commentTextAreaTarget.comment){
-                    this.commentTextAreaTarget.comment = commentNew;///@todo use setCommentToCurrentMove?
+                if(commentNew != this.commentTextAreaTarget.getComment()){
+                    this.commentTextAreaTarget.setComment(commentNew);///@todo use model.setCommentToCurrentNode?
                 }
             }
             else{
-                if(this.commentTextAreaTarget.hasOwnProperty("comment")){
-                    delete this.commentTextAreaTarget.comment;
+                if(this.commentTextAreaTarget.hasComment()){
+                    this.commentTextAreaTarget.removeComment();
                     this.updateCommentTextArea();
                 }
             }
@@ -1470,6 +1473,7 @@ class GameView{
                     this.alternately = false;
                     gameView.hideMainUI();
                     gameView.boardElement.setStonePointerEventsEnabled(false); //石が盤面上のmouse/touchイベントを邪魔しないようにする
+                    this.oldBoard = gameView.model.board.clone(); //開始時点の盤面
                 }
             }
             end(){
@@ -1479,6 +1483,13 @@ class GameView{
                     this.controlBar.parentNode.removeChild(this.controlBar);
                     gameView.showMainUI();
                     gameView.boardElement.setStonePointerEventsEnabled(true);
+
+                    // update setup property
+                    const newChanges = enumerateBoardChanges(this.oldBoard, gameView.model.board); //diffBoard
+                    const currNode = gameView.model.history.getCurrentNode();
+                    const oldSetup = currNode.getSetup();
+                    const mergedChanges = (oldSetup && oldSetup.intersections) ? mergeBoardChanges(oldSetup.intersections, newChanges) : newChanges;
+                    currNode.setSetup(mergedChanges);
                 }
             }
 
