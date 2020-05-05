@@ -507,7 +507,7 @@ class HistoryNode{
     // Node Types
     isMove(){return this.pos != NPOS;}
     isPass(){return this.pos == POS_PASS;}
-    isResign(){return this.pos == POS_PASS;}
+    isResign(){return this.pos == POS_RESIGN;}
     isPlace(){return isIntersectionPosition(this.pos);}
 
     // Prev Node
