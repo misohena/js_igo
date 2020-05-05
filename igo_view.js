@@ -1570,7 +1570,6 @@ class GameView{
 
             hookEventHandlers(){
                 const eventNames = [
-                    "Click",
                     "MouseDown", "MouseUp", "MouseMove", "MouseLeave",
                     "TouchStart", "TouchEnd", "TouchMove", "TouchCancel"
                 ];
@@ -1593,20 +1592,17 @@ class GameView{
 
             // Mouse Event
 
-            onClick(e){
-                if(!this.drawing){
-                    this.paint(e);
-                }
-            }
-
             onMouseDown(e){
                 e.stopPropagation();
                 e.preventDefault();
-                this.startDrawing();
+                this.startDrawing(e);
             }
             onMouseUp(e){
                 e.stopPropagation();
                 e.preventDefault();
+                if(this.drawing && !this.drawed){ //click
+                    this.draw(this.startPos);
+                }
                 this.endDrawing();
             }
             onMouseLeave(e){
@@ -1617,7 +1613,7 @@ class GameView{
                 e.stopPropagation();
                 e.preventDefault();
                 if(this.drawing){
-                    this.paint(e);
+                    this.draw(e);
                 }
             }
 
@@ -1625,15 +1621,19 @@ class GameView{
 
             onTouchStart(e){
                 if(e.touches.length == 1){
-                    this.startDrawing();
+                    this.startDrawing(e.touches[0]);
                 }
                 else{
                     this.endDrawing();
                 }
             }
             onTouchEnd(e){
-                if(e.touches.length != 1){
+                if(e.touches.length == 0 && this.drawing){ //leave last touch && now drawing
+                    if(! this.drawed){ // click
+                        this.draw(this.startPos);
+                    }
                     this.endDrawing();
+                    e.preventDefault();//prevent mouse event
                 }
             }
             onTouchCancel(e){
@@ -1643,21 +1643,23 @@ class GameView{
                 if(e.touches.length == 1 && this.drawing){
                     e.stopPropagation();
                     e.preventDefault();
-                    this.paint(e.touches[0]);
+                    this.draw(e.touches[0]);
                 }
             }
 
 
             // Drawing
-            startDrawing(){
+            startDrawing(e){
                 if(!this.drawing){
                     this.drawing = true;
+                    this.drawed = false;
+                    this.startPos = {clientX:e.clientX, clientY:e.clientY};
                 }
             }
             endDrawing(){
                 if(this.drawing){
                     this.drawing = false;
-                    if(this.alternately){
+                    if(this.drawed && this.alternately){
                         const newColor = getOppositeColor(this.color);
                         if(newColor != this.color){
                             this.colorSelector.radio.selectByValue(newColor);
@@ -1666,14 +1668,17 @@ class GameView{
                     }
                 }
             }
-            paint(e){
-                const eventPos = gameView.boardElement.convertEventPosition(e);
-                const x = eventPos.x;
-                const y = eventPos.y;
-                if(x >= 0 && y >= 0 && x < gameView.boardElement.w && y < gameView.boardElement.h){
-                    const pos = gameView.toModelPosition(x, y);
-                    gameView.model.board.setAt(pos, this.color);
-                    gameView.updateIntersection(pos);
+            draw(e){
+                if(this.drawing){
+                    this.drawed = true;
+                    const eventPos = gameView.boardElement.convertEventPosition(e);
+                    const x = eventPos.x;
+                    const y = eventPos.y;
+                    if(x >= 0 && y >= 0 && x < gameView.boardElement.w && y < gameView.boardElement.h){
+                        const pos = gameView.toModelPosition(x, y);
+                        gameView.model.board.setAt(pos, this.color);
+                        gameView.updateIntersection(pos);
+                    }
                 }
             }
         }
