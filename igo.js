@@ -645,9 +645,12 @@ class HistoryTree{
 
     getMoveNumberAt(pos){// return move number of stone specified by pos
         let num = this.moveNumber;
-        for(let node = this.pointer; node; node = node.prev, --num){
+        for(let node = this.pointer; node; node = node.prev){
             if(node.pos == pos){
                 return num;
+            }
+            if(node.isMove()){
+                --num;
             }
         }
         return -1;
