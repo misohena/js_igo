@@ -494,18 +494,32 @@ class BoardElement{
         }
         return textElem;
     }
-    addTextOnStone(id, x, y, text){
+    addElementOnStone(id, x, y, elementCreator, afterStone){
         const pos = this.toPosition(x, y);
         if(pos >= 0){
             const intersection = this.intersections[pos];
             if(intersection.elements && intersection.elements.stone &&
                (intersection.state == BLACK || intersection.state == WHITE)){
-                const fill = intersection.state == BLACK ? "#ddd" : "#444";
-                const textElem = this.createText(x, y, text, fill);
-                this.stones.appendChild(textElem);
-                intersection.elements[id] = textElem;
+                const elem = elementCreator(intersection.state);
+                if(afterStone){
+                    this.stones.insertBefore(elem, intersection.elements.stone.nextSibling);
+                }
+                else{
+                    this.stones.appendChild(elem);
+                }
+                if(id){
+                    intersection.elements[id] = elem;
+                }
+                return elem;
             }
         }
+        return null;
+    }
+    addTextOnStone(id, x, y, text){
+        this.addElementOnStone(id, x, y, (state)=>{
+            const fill = state == BLACK ? "#ddd" : "#444";
+            return this.createText(x, y, text, fill);
+        });
     }
     createOverlayText(x, y, text, fill, onClick){
         const elem = this.createText(x, y, text, fill);
@@ -608,6 +622,7 @@ class GameView{
         this.editable = toBool(opt.editable, true);
         this.showBranches = toBool(opt.showBranchText, false);
         this.showMoveNumber = toBool(opt.showMoveNumber, false);
+        this.showLastMoveMark = toBool(opt.showLastMoveMark, false);
         this.rotate180 = toBool(opt.rotate180, false);
         this.preventRedoAtBranchPoint = toBool(opt.preventRedoAtBranchPoint, false);
         this.autoMove = opt.autoMove; //BLACK, WHITE, true, false
@@ -818,6 +833,7 @@ class GameView{
         this.updateStatusText();
         this.updateCommentTextArea();
         this.updateHistoryController();
+        this.updateLastMoveMark();
         this.updateMarkProperty();
         this.updateBranchTexts();
     }
@@ -875,6 +891,34 @@ class GameView{
                     this.boardElement.addTextOnStone("moveNumber", viewX, viewY, "" + moveNumber);
                 }
             }
+        }
+    }
+
+    updateLastMoveMark(){
+        if(this.lastMoveMark){
+            this.lastMoveMark.parentNode.removeChild(this.lastMoveMark);
+            this.lastMoveMark = null;
+        }
+        if(!this.showLastMoveMark){
+            return;
+        }
+        const node = this.model.history.getCurrentNode();
+        if(node && node.isPlace()){ //ignore pass, resign, root node, setup(?) node
+            //apply rotate180 setting
+            const viewX = this.toBoardElementX(node.pos);
+            const viewY = this.toBoardElementY(node.pos);
+
+            this.lastMoveMark = this.boardElement.addElementOnStone(null, viewX, viewY, (state)=>{
+                const cx = this.boardElement.getIntersectionX(viewX);
+                const cy = this.boardElement.getIntersectionY(viewY);
+                const r = 0.14 * this.boardElement.gridInterval;
+                const x = cx-r;
+                const y = cy-r;
+                const width = r*2;
+                const height = r*2;
+                return createSVG("rect", {x, y, width, height, fill:"rgba(245,60,0)", style:"pointer-events:none"});
+            }, true);
+
         }
     }
 
