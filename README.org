@@ -2,7 +2,7 @@
 
 * 概要
 
-ブラウザ上で使える碁盤です。囲碁クエストのウェブ版に検討機能が無かったので作りました。
+ブラウザ上で使える碁盤です。囲碁クエストのウェブ版に検討機能が無かったので作りました。詰碁等をウェブページに貼り付けられるようにするための機能も追加しています。
 
 [[file:./screenshot.png]]
 
@@ -25,11 +25,12 @@ SGFは次のプロパティに対応しています。
 - ルートノードでの表示エリア指定(VW)
 - 各ノードにつき1つのコメント(C)
 - 着手(B, W)
+- マークアップ(MA, CR, SQ, TR, LB)
 
 囲碁クエストでエクスポートしたSGFをペーストして確認したほか、拾ってきた詰碁の棋譜をペーストして確認しています。
 
-** 使用方法
-
+* 使用方法
+** 碁盤
 Github Pagesに置いてあります。
 
 - [[https://misohena.github.io/js_igo/]]
@@ -39,3 +40,17 @@ Github Pagesに置いてあります。
 - [[https://misohena.github.io/js_igo/examples.html]]
 
 使い方はソースを参照のこと。
+
+* 開発メモ
+** 基本的な構造
+
+: (igo_view.js)
+:    GameView -> BoardElement
+: --------------------------------
+:            `-> Game -> Board
+:                     -> HistoryTree -> HistoryNode
+: (igo.js)
+
+** リンク
+
+- [[https://www.red-bean.com/sgf/][SGF file format FF(4)]]

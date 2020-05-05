@@ -564,7 +564,7 @@ class HistoryNode{
     // Properties
     addProperty(id, value, inherit){
         if(!this.props){this.props = {};}
-        this.props[id] = {value, inherit:inherit===true};
+        return this.props[id] = {value, inherit:inherit===true};
     }
     hasProperty(id, inherit){
         return this.props ? this.props.hasOwnProperty(id) :
@@ -581,6 +581,14 @@ class HistoryNode{
     removeProperty(id){
         if(this.props){
             delete this.props[id];
+        }
+    }
+    acquireProperty(id, defaultValue){
+        if(this.prop && this.prop.hasOwnProperty(id)){
+            return this.prop[id];
+        }
+        else{
+            return this.addProperty(id, defaultValue, false);
         }
     }
     // Comment
@@ -1153,6 +1161,37 @@ class Game{
                     case "C":
                         game.setCommentToCurrentNode(parseSGFText(pvalues[0]));
                         break;
+                    // Markup Properties
+                    case "MA":
+                    case "CR":
+                    case "SQ":
+                    case "TR":
+                        {
+                            const node = game.history.getCurrentNode();
+                            const marks = node.acquireProperty("marks", []).value;
+                            const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
+                            for(const point of points){
+                                marks.push({
+                                    pos: point,
+                                    type: pid == "CR" ? "circle" :
+                                        pid == "SQ" ? "square" :
+                                        pid == "TR" ? "triangle" :
+                                        "cross"});
+                            }
+                        }
+                        break;
+                    case "LB":
+                        {
+                            const node = game.history.getCurrentNode();
+                            const marks = node.acquireProperty("marks", []).value;
+                            for(const value of pvalues){
+                                const valuePointText = splitSGFCompose(value);
+                                const point = parseSGFPoint(valuePointText[0], w, h);
+                                const text = parseSGFSimpleText(valuePointText[1]);
+                                marks.push({pos:point, type:"text", text});
+                            }
+                        }
+                        break;
                     // Miscellaneous Properties
                     case "VW":
                         {
@@ -1363,7 +1402,7 @@ function parseSGFPointXY(value, w, h){
             return charCode - 0x41 + 26;
         }
         else{
-            throw new Error("Invalid point character :" + String.fromCharCode(charCode));
+            throw new Error("Invalid point character '" + String.fromCharCode(charCode) + "' in " + value);
         }
     }
     const x = fromLetter(value.charCodeAt(0));

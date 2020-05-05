@@ -817,6 +817,7 @@ class GameView{
         this.updateStatusText();
         this.updateCommentTextArea();
         this.updateHistoryController();
+        this.updateMarkProperty();
         this.updateBranchTexts();
     }
 
@@ -875,6 +876,45 @@ class GameView{
             }
         }
     }
+
+    updateMarkProperty(){
+        this.removeMarksOnBoard();
+        this.addMarksOnBoard();
+    }
+    addMarksOnBoard(){
+        if(!this.markElements){
+            this.markElements = [];
+        }
+        const marks = this.model.history.getCurrentNode().getProperty("marks");
+        if(marks && marks.value){
+            for(const mark of marks.value){
+                //apply rotate180 setting
+                const viewX = this.toBoardElementX(mark.pos);
+                const viewY = this.toBoardElementY(mark.pos);
+                const text =
+                      mark.type == "text" ? mark.text :
+                      mark.type == "circle" ? "\u25cb" :
+                      mark.type == "triangle" ? "\u25b3" :
+                      mark.type == "square" ? "\u25a1" :
+                      mark.type == "cross" ? "x" :
+                      "x";
+                const state = this.model.board.getAt(mark.pos);
+                const fill =
+                      state == "BLACK" ? "#fff" :
+                      state == "WHITE" ? "#000" :
+                      "#fff";
+                this.markElements.push(this.boardElement.createOverlayText(viewX, viewY, text, fill));
+            }
+        }
+    }
+    removeMarksOnBoard(){
+        if(!this.markElements){
+            return;
+        }
+        this.markElements.forEach(elem=>elem.parentNode.removeChild(elem));
+        this.markElements.splice(0);
+    }
+
 
     onIntersectionClick(pos, e){
         if(this.mode){

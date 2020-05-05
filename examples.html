@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
     <link rel="stylesheet" href="igo.css" />
-    <script src="igo.js?ver=20200504"></script>
-    <script src="igo_view.js?ver=20200504"></script>
+    <script src="igo.js?ver=20200505"></script>
+    <script src="igo_view.js?ver=20200505"></script>
     <title>js_igo examples</title>
     <style>
     section {margin-left: 2rem;}
@@ -31,6 +31,33 @@
               //showCheckboxBranch: false,
               //showCheckboxComment: true,
               //showCheckboxRotate180: false,
+
+              editable: false,
+              showBranchText: true,
+              preventRedoAtBranchPoint: true,
+              autoMove: igo.WHITE,
+      });
+      </script>
+    </section>
+    <section>
+      <h2>マークのテスト</h2>
+      <p>SGFのマークには次のものがあります。</p>
+      <ul>
+        <li>CR:○</li>
+        <li>TR:△</li>
+        <li>SQ:□</li>
+        <li>MA:×</li>
+        <li>LB:テキスト</li>
+      </ul>
+      <script>
+      igo.insertGameViewBeforeCurrentScript(
+          igo.Game.fromSGF("(;GM[1]FF[4]SZ[9]VW[ba:ie]AW[db][ec][hc][dd][fd][gd][hd]AB[eb][hb][ib][fc][gc]LB[da:a][ic:b]C[黒番です。さあどこに打ちますか？\naもbも脱出できなそうですね。](;B[ga];W[fb]TR[fc][gc]C[あ、△二子が取られちゃう！];B[gb]C[助けると……];W[ea]SQ[eb]C[□がとられちゃいました……];B[fa]C[後からコウ材にはなるかもしれません];W[eb];B[ic];W[id];B[ha];W[ia]C[全部取られちゃった！])(;B[fb](;W[ga](;B[gb];W[ha];B[ea];W[da];B[ic];W[id];B[ia];W[fa]C[全部取られちゃった！])(;B[ha];W[ea](;B[fa];W[gb]C[全部取られちゃった！])(;B[gb];W[fa];B[da];W[ea];B[fa];W[ca];B[ea];W[cb];B[ic];W[id]CR[ga][ia]C[○目が二つあるので活きです])))(;W[ha];B[ga];W[ea];B[ia];W[fa];B[da];W[ea];B[fa];W[cb]CR[ha][gb]C[○目が二つあるので活きです]))(;B[fa](;W[gb]TR[fc][gc]C[△二子があたりです。];B[fb];W[ga];B[ha]C[活きました！])(;W[ga](;B[gb];W[ea];B[da];W[ca];B[ha])(;B[ha];W[ea](;B[fb];W[gb])(;B[da];W[ca];B[fb];W[ea];B[gb])))))"), {
+              showUI: false,
+              showComment: true,
+              commentLocation: "TOP",
+              showHistoryController: true,
+              showVisibilitySettings: false,
+              showCheckboxMoveNumber: true,
 
               editable: false,
               showBranchText: true,
