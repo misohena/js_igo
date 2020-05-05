@@ -972,6 +972,12 @@ class Game{
         function toSGFColor(color){
             return color == BLACK ? "B" : color == WHITE ? "W" : "E";
         }
+        function toSGFText(str){
+            return str.replace(/([\]\\:])/gi, "\\$1").replace(/[\t\v]/gi, " ");
+        }
+        function toSGFSimpleText(str){
+            return str.replace(/([\]\\:])/gi, "\\$1").replace(/[\t\v\n\r]/gi, " ");
+        }
 
         // determine start node
         let startNode;
@@ -1042,7 +1048,7 @@ class Game{
                 }
                 if(node.hasComment()){
                     // C
-                    str += "C[" + node.getComment() + "]";
+                    str += "C[" + toSGFText(node.getComment()) + "]";
                 }
             },
             (node)=>{ //leave
