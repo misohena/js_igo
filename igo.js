@@ -584,8 +584,8 @@ class HistoryNode{
         }
     }
     acquireProperty(id, defaultValue){
-        if(this.prop && this.prop.hasOwnProperty(id)){
-            return this.prop[id];
+        if(this.props && this.props.hasOwnProperty(id)){
+            return this.props[id];
         }
         else{
             return this.addProperty(id, defaultValue, false);
