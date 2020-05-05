@@ -797,6 +797,8 @@ function mergeBoardChanges(oldChanges, newChanges){
             else{
                 //discard change
             }
+            ++oldIndex;
+            ++newIndex;
         }
     }
     while(oldIndex < oldChanges.length){
