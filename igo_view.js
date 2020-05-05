@@ -900,8 +900,8 @@ class GameView{
                       "x";
                 const state = this.model.board.getAt(mark.pos);
                 const fill =
-                      state == "BLACK" ? "#fff" :
-                      state == "WHITE" ? "#000" :
+                      state == BLACK ? "#fff" :
+                      state == WHITE ? "#000" :
                       "#fff";
                 this.markElements.push(this.boardElement.createOverlayText(viewX, viewY, text, fill));
             }
