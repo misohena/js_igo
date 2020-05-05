@@ -729,7 +729,8 @@ class GameView{
             {text:"初期化", handler:()=>this.openResetDialog(), visible:this.editable},
             {text:"SGFインポート", handler:()=>this.importSGF(), visible:this.editable},
             {text:"SGFエクスポート", handler:()=>this.exportSGF()},
-            {text:"フリー編集", handler:()=>this.startFreeEditMode(), visible:this.editable}
+            {text:"フリー編集", handler:()=>this.startFreeEditMode(), visible:this.editable},
+            {text:"マーク編集", handler:()=>this.startMarkEditMode(), visible:this.editable}
         ]);
     }
 
@@ -1790,6 +1791,111 @@ class GameView{
             }
         }
         this.pushMode(new FreeEditMode(this));
+    }
+
+
+    //
+    // Mark Edit Mode
+    //
+    startMarkEditMode(){
+        const gameView = this;
+        class MarkEditMode{
+            constructor(){
+                this.alive = false;
+            }
+            start(){
+                if(!this.alive){
+                    this.alive = true;
+                    this.type = "cross";
+                    this.createController();
+                    gameView.hideMainUI();
+                    gameView.boardElement.setStonePointerEventsEnabled(false); //石が盤面上のmouse/touchイベントを邪魔しないようにする
+                }
+            }
+            end(){
+                if(this.alive){
+                    this.alive = false;
+                    this.controlBar.parentNode.removeChild(this.controlBar);
+                    gameView.showMainUI();
+                    gameView.boardElement.setStonePointerEventsEnabled(true);
+                }
+            }
+
+            createController(){
+                const bar = this.controlBar = createElement("div", {
+                    "class":"igo-mark-edit igo-control-bar"
+                }, [
+                    this.colorSelector = createRadioButtons(
+                        "mark-edit-type",
+                        [
+                            {value:"cross", text:"x", checked:true},
+                            {value:"circle", text:"\u25cb"},
+                            {value:"triangle", text:"\u25b3"},
+                            {value:"square", text:"\u25a1"},
+                            {value:"text", text:"テキスト"},
+                        ],
+                        value=>{this.type = value;}),
+                    createButton("終了", ()=>{gameView.popMode();})
+                ], gameView.bottomBar);
+            }
+
+            getMarkAt(pos){
+                const marks = gameView.model.history.getCurrentNode().getProperty("marks");
+                if(marks && marks.value){
+                    const index = marks.value.findIndex(m=>m.pos == pos);
+                    if(index >= 0){
+                        const mark = marks.value[index];
+                        return {mark, index, marks:marks.value};
+                    }
+                }
+                return null;
+            }
+            onIntersectionClick(pos, e){
+                const currMark = this.getMarkAt(pos);
+                if(currMark){
+                    createPopupMenu(e.clientX, e.clientY, [
+                        {text:"削除", handler:()=>this.deleteMark(pos)}
+                    ]);
+                }
+                else{
+                    if(this.type == "text"){
+                        const {dialog, textarea} = createTextDialog(
+                            "ラベルテキストを入力してください",
+                            "",
+                            [],
+                            ()=>{
+                                if(textarea.value){
+                                    this.putMark(pos, "text", textarea.value);
+                                }
+                            });
+                    }
+                    else{
+                        this.putMark(pos, this.type);
+                    }
+                }
+            }
+            deleteMark(pos){
+                const currMark = this.getMarkAt(pos);
+                if(currMark){
+                    currMark.marks.splice(currMark.index, 1);
+                }
+                gameView.updateMarkProperty();
+            }
+            putMark(pos, type, text){
+                const currMark = this.getMarkAt(pos);
+                if(!currMark){
+                    const marks = gameView.model.history.getCurrentNode().acquireProperty("marks", []);
+                    if(type == "text"){
+                        marks.value.push({pos, type, text});
+                    }
+                    else{
+                        marks.value.push({pos, type});
+                    }
+                }
+                gameView.updateMarkProperty();
+            }
+        }
+        this.pushMode(new MarkEditMode(this));
     }
 };
 igo.GameView = GameView;
