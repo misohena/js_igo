@@ -1046,6 +1046,25 @@ class Game{
                         }
                     }
                 }
+                if(node.hasProperty("marks")){
+                    const marks = node.getProperty("marks").value;
+                    if(marks){
+                        for(const mark of marks){
+                            if(mark.type == "text"){
+                                str += "LB["  + toSGFPoint(mark.pos) + ":" + toSGFSimpleText(mark.text) + "]";
+                            }
+                            else{
+                                const pid =
+                                      mark.type == "circle" ? "CR" :
+                                      mark.type == "triangle" ? "TR" :
+                                      mark.type == "square" ? "SQ" :
+                                      mark.type == "cross" ? "MA" :
+                                      "MA";
+                                str += pid + "[" + toSGFPoint(mark.pos) + "]";
+                            }
+                        }
+                    }
+                }
                 if(node.hasComment()){
                     // C
                     str += "C[" + toSGFText(node.getComment()) + "]";
