@@ -426,18 +426,26 @@ class BoardElement{
     removeStone(x, y){
         this.setIntersectionState(x, y, EMPTY);
     }
-    toPosition(x, y){return x + y * this.w;}
-    setIntersectionState(x, y, state){
-        if(x >= 0 && x < this.w && y >= 0 && y < this.h){
-            const pos = this.toPosition(x, y);
+    toPosition(x, y){
+        return x >= 0 && x < this.w && y >= 0 && y < this.h ?
+            x + y * this.w :
+            -1;
+    }
+    removeIntersectionElements(intersection){
+        if(intersection && intersection.elements){
+            for(const name in intersection.elements){
+                const elem = intersection.elements[name];
+                elem.parentNode.removeChild(elem);
+            }
+            intersection.elements = null;
+        }
+    }
+    setIntersectionState(x, y, state, forced){
+        const pos = this.toPosition(x, y);
+        if(pos >= 0){
             const intersection = this.intersections[pos];
-            if(intersection.state != state){
-                if(intersection.elements){
-                    const elements = intersection.elements;
-                    elements.stone.parentNode.removeChild(elements.stone);
-                    elements.shadow.parentNode.removeChild(elements.shadow);
-                    intersection.elements = null;
-                }
+            if(intersection.state != state || forced){
+                this.removeIntersectionElements(intersection);
                 if(state == BLACK || state == WHITE){
                     const elements = this.createStoneOnIntersection(x, y, state);
                     this.shadows.appendChild(elements.shadow);
@@ -451,12 +459,7 @@ class BoardElement{
     removeAllStones(){
         for(let pos = 0; pos < this.intersections.length; ++pos){
             const intersection = this.intersections[pos];
-            if(intersection.elements){
-                const elements = intersection.elements;
-                elements.stone.parentNode.removeChild(elements.stone);
-                elements.shadow.parentNode.removeChild(elements.shadow);
-                intersection.elements = null;
-            }
+            this.removeIntersectionElements(intersection);
             intersection.state = EMPTY;
         }
     }
@@ -470,19 +473,44 @@ class BoardElement{
         }
     }
 
-    createOverlayText(x, y, text, fill, onClick){
+    createText(x, y, text, fill){
         const textX = this.getIntersectionX(x);
         const textY = this.getIntersectionY(y);
-        const fontSize = Math.ceil(this.gridInterval*0.70);
-        const elem = createSVG("text", {
+        const fontSize = Math.ceil(this.gridInterval*0.65);
+        const textElem = createSVG("text", {
             x: textX,
             y: textY,
             fill: fill || "#444",
-            style: "cursor:pointer;"+
+            style:
                 "font-weight:bold;"+
-                "font-size:" + fontSize +";",
+                "font-family:arial;"+
+                "font-size:" + fontSize +"px;",
             "text-anchor": "middle",
-            "alignment-baseline": "middle"}, [text], this.overlays);
+            "alignment-baseline": "central"
+        }, [text]);
+        if(text.length >= 3){
+            textElem.setAttributeNS(null, "textLength", Math.ceil(this.gridInterval * 0.85));
+            textElem.setAttributeNS(null, "lengthAdjust", "spacingAndGlyphs");
+        }
+        return textElem;
+    }
+    addTextOnStone(id, x, y, text){
+        const pos = this.toPosition(x, y);
+        if(pos >= 0){
+            const intersection = this.intersections[pos];
+            if(intersection.elements && intersection.elements.stone &&
+               (intersection.state == BLACK || intersection.state == WHITE)){
+                const fill = intersection.state == BLACK ? "#ddd" : "#444";
+                const textElem = this.createText(x, y, text, fill);
+                this.stones.appendChild(textElem);
+                intersection.elements[id] = textElem;
+            }
+        }
+    }
+    createOverlayText(x, y, text, fill, onClick){
+        const elem = this.createText(x, y, text, fill);
+        elem.style.cursor = "pointer";
+        this.overlays.appendChild(elem);
         if(onClick){
             elem.style.pointerEvents = "auto";
             elem.addEventListener("click", onClick, false);
@@ -579,6 +607,7 @@ class GameView{
         this.opt = opt = opt || {};
         this.editable = toBool(opt.editable, true);
         this.showBranches = toBool(opt.showBranchText, false);
+        this.showMoveNumber = toBool(opt.showMoveNumber, false);
         this.rotate180 = toBool(opt.rotate180, false);
         this.preventRedoAtBranchPoint = toBool(opt.preventRedoAtBranchPoint, false);
         this.autoMove = opt.autoMove; //BLACK, WHITE, true, false
@@ -590,6 +619,7 @@ class GameView{
         this.showMoveController = this.showMenu || this.showPassResign;
         const showVisibilitySettings = toBool(opt.showVisibilitySettings, showUI);
         this.showCheckboxBranch = toBool(opt.showCheckboxBranch, showVisibilitySettings);
+        this.showCheckboxMoveNumber = toBool(opt.showCheckboxMoveNumber, showVisibilitySettings);
         this.showCheckboxComment = toBool(opt.showCheckboxComment, showVisibilitySettings);
         this.showCheckboxRotate180 = toBool(opt.showCheckboxRotate180, showVisibilitySettings);
         this.showHistoryController = toBool(opt.showHistoryController, showUI || this.showCheckboxBranch || this.showCheckboxComment || this.showCheckboxRotate180);
@@ -630,9 +660,18 @@ class GameView{
     }
 
     resetGame(game){
+        if(this.model){
+            this.model.board.unhookSetAt();
+        }
         this.model = game;
         const w = this.w = this.model.board.w;
         const h = this.h = this.model.board.h;
+
+        //observe board change
+        this.model.board.hookSetAt(
+            (pos, state)=>this.onIntersectionChange(pos, state));
+        this.intersectionDirty = new Array(this.model.board.getIntersectionCount());
+        this.invalidAllIntersections();
 
         // discard old board
         if(this.boardElement){
@@ -800,18 +839,40 @@ class GameView{
         return this.rotate180 ? this.model.board.h - 1 - y : y;
     }
 
-    updateBoard(){
-        this.boardElement.setAllIntersections(
-            (x, y)=>((x >= 0 && y >= 0 && x < this.w && y < this.h) ?
-                     this.model.board.getAt(this.toModelPosition(x, y)) : EMPTY));
+    onIntersectionChange(pos, state){
+        this.intersectionDirty[pos] = true;
     }
 
-    updateIntersection(pos){
-        if(this.model.board.isValidPosition(pos)){
-            this.boardElement.setIntersectionState(
-                this.toBoardElementX(pos),
-                this.toBoardElementY(pos),
-                this.model.board.getAt(pos));
+    invalidAllIntersections(){
+        this.intersectionDirty.fill(true);
+    }
+
+    updateBoard(forced){
+        const numIntersections = this.model.board.getIntersectionCount();
+        for(let pos = 0; pos < numIntersections; ++pos){
+            this.updateIntersection(pos, forced);
+        }
+    }
+
+    updateIntersection(pos, forced){
+        if(!this.model.board.isValidPosition(pos)){return;}
+
+        if(this.intersectionDirty[pos] || forced){
+            this.intersectionDirty[pos] = false;
+
+            //apply rotate180 setting
+            const viewX = this.toBoardElementX(pos);
+            const viewY = this.toBoardElementY(pos);
+
+            const state = this.model.board.getAt(pos);
+            this.boardElement.setIntersectionState(viewX, viewY, state, true); //forced reset to remove additional elements(i.e. moveNumber)
+
+            if(this.showMoveNumber){
+                const moveNumber = this.model.history.getMoveNumberAt(pos);
+                if(moveNumber >= 0){
+                    this.boardElement.addTextOnStone("moveNumber", viewX, viewY, "" + moveNumber);
+                }
+            }
         }
     }
 
@@ -1239,12 +1300,18 @@ class GameView{
                 this.showBranches = e.target.checked;
                 this.update();
             }) : null,
+            this.showCheckboxMoveNumber ? createCheckbox("着手番号", this.showMoveNumber, e=>{
+                this.showMoveNumber = e.target.checked;
+                this.invalidAllIntersections();
+                this.update();
+            }) : null,
             this.showCheckboxComment ? createCheckbox("コメント", this.showComment, e=>{
                 this.showComment = e.target.checked;
                 this.updateCommentTextAreaDisplay();
             }) : null,
             this.showCheckboxRotate180 ? createCheckbox("180度回転", this.rotate180, e=>{
                 this.rotate180 = e.target.checked;
+                this.invalidAllIntersections();
                 this.update();
             }) : null
         ], this.bottomBar);

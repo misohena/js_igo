@@ -87,12 +87,26 @@ class Board{
         {return this.w * this.h;}
     getAt(pos)
         {return Array2Bits.get(this.intersections, pos);}
-    setAt(pos, state)
+    setAtInternal(pos, state)
         {Array2Bits.set(this.intersections, pos, state);}
+    setAt(pos, state)
+        {this.setAtInternal(pos, state);}
     isEmpty(pos)
         {return pos != NPOS && this.getAt(pos) == EMPTY;}
     removeStone(pos)
         {this.setAt(pos, EMPTY);}
+
+    hookSetAt(func){
+        if(typeof(func) == "function"){
+            this.setAt = (pos, state)=>{
+                func(pos, state);
+                this.setAtInternal(pos, state);
+            };
+        }
+    }
+    unhookSetAt(){
+        delete this.setAt;
+    }
 
     // Position(index of intersections)
 
@@ -612,7 +626,6 @@ class HistoryTree{
         this.moveNumber = 0;
         this.pointer = this.first = new HistoryNode(null, NPOS, null, NPOS, NPOS);
     }
-    getMoveNumber(){return this.moveNumber;}
     getCurrentNode(){return this.pointer;}
     getNextNodes(){return this.pointer ? this.pointer.nexts : [];}
     getPreviousNode(){return this.pointer.prev;}
@@ -625,6 +638,19 @@ class HistoryTree{
     }
     setPropertyToCurrentNode(id, value, inherit){
         this.pointer.addProperty(id, value, inherit);
+    }
+
+    // MoveNumber
+    getMoveNumber(){return this.moveNumber;}
+
+    getMoveNumberAt(pos){// return move number of stone specified by pos
+        let num = this.moveNumber;
+        for(let node = this.pointer; node; node = node.prev, --num){
+            if(node.pos == pos){
+                return num;
+            }
+        }
+        return -1;
     }
 
     // Move
