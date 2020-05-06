@@ -20,16 +20,23 @@
       <script>
       new igo.GameView(
           // placement
-          // - parentNode
-          // - {after:previousSibling}
-          // - {before:nextSibling}
-          // - script element (same as {after:script element})
+          // - <parentNode or ID>
+          // - {after:<previousSibling or ID>}
+          // - {before:<nextSibling or ID>}
+          // - <script element or ID> (same as {after:<script element or ID>})
+          // - null
+          //     (ex:
+          //       const gameView = new igo.GameView(null);
+          //       parent.appendChild(gameView.rootElement);
+          //       gameView.fitBoardSizeToWindowAndParent();
+          //     )
           {after: document.currentScript},
 
           // game object
           // - new igo.Game(19)
           // - igo.Game.fromSGF("<SGF>")
           // - "<SGF>"
+          // - undefined  (default:9x9 board)
           igo.Game.fromSGF("(;GM[1]SZ[9]VW[da:id]C[黒番です。さあどこに打ちますか？\nさあさあ]AW[ea]AB[fa]AW[eb]AB[fb:ib]AW[ec:ic](;B[ga];W[ha];B[ia];W[ha]C[全部取られちゃった！])(;B[ha]C[白はもう打てません。成功！])(;B[ia];W[ga];B[ha];W[ga]C[全部取られちゃった！]))"),
 
           // options

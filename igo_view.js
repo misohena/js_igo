@@ -676,20 +676,22 @@ class GameView{
         function toElement(id){
             return typeof(id)=="string" ? document.getElementById(id) : id;
         }
-        if(placement.tagName == "SCRIPT"){
-            placement.after = placement;
-        }
-        if(placement.after){
-            const prevNode = toElement(placement.after);
-            prevNode.parentNode.insertBefore(this.rootElement, prevNode.nextSibling);
-        }
-        else if(placement.before){
-            const nextNode = toElement(placement.before);
-            nextNode.parentNode.insertBefore(this.rootElement, nextNode);
-        }
-        else{
-            const parent = toElement(placement);
-            parent.appendChild(this.rootElement);
+        if(placement){
+            if(placement.tagName == "SCRIPT"){
+                placement.after = placement;
+            }
+            if(placement.after){
+                const prevNode = toElement(placement.after);
+                prevNode.parentNode.insertBefore(this.rootElement, prevNode.nextSibling);
+            }
+            else if(placement.before){
+                const nextNode = toElement(placement.before);
+                nextNode.parentNode.insertBefore(this.rootElement, nextNode);
+            }
+            else{
+                const parent = toElement(placement);
+                parent.appendChild(this.rootElement);
+            }
         }
 
         // Main UI (Move Mode only?)
