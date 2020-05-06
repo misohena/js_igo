@@ -613,7 +613,11 @@ function insertGameViewBeforeCurrentScript(game, opt){
 igo.insertGameViewBeforeCurrentScript = insertGameViewBeforeCurrentScript;
 
 class GameView{
-    constructor(parent, game, opt){
+    constructor(placement, game, opt){
+        if(typeof(game) == "string"){
+            game = Game.fromSGF(game);
+        }
+
         // Options
         function toBool(v, defaultValue){
             return v !== undefined ? v : defaultValue;
@@ -663,7 +667,30 @@ class GameView{
             // Bottom Bar
             this.bottomBar = createElement("div", {"class":"igo-bottom-bar"}, [
             ])
-        ], parent);
+        ]);
+
+        // Insert Root Element
+        //
+        // 注意:placementをnullにして後から追加する場合は
+        // gameView.fitBoardSizeToWindowAndParent();を明示的に呼ぶこと。
+        function toElement(id){
+            return typeof(id)=="string" ? document.getElementById(id) : id;
+        }
+        if(placement.tagName == "SCRIPT"){
+            placement.after = placement;
+        }
+        if(placement.after){
+            const prevNode = toElement(placement.after);
+            prevNode.parentNode.insertBefore(this.rootElement, prevNode.nextSibling);
+        }
+        else if(placement.before){
+            const nextNode = toElement(placement.before);
+            nextNode.parentNode.insertBefore(this.rootElement, nextNode);
+        }
+        else{
+            const parent = toElement(placement);
+            parent.appendChild(this.rootElement);
+        }
 
         // Main UI (Move Mode only?)
         this.createMoveController();
