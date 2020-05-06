@@ -677,8 +677,16 @@ class GameView{
             return typeof(id)=="string" ? document.getElementById(id) : id;
         }
         if(placement){
-            if(placement.tagName == "SCRIPT"){
-                placement.after = placement;
+            if(placement instanceof Node){
+                if(placement.tagName == "SCRIPT"){
+                    placement = {after:placement};
+                }
+                else{
+                    placement = {under:placement};
+                }
+            }
+            else if(typeof(placement) == "string"){
+                placement = {under:placement};
             }
             if(placement.after){
                 const prevNode = toElement(placement.after);
@@ -688,8 +696,8 @@ class GameView{
                 const nextNode = toElement(placement.before);
                 nextNode.parentNode.insertBefore(this.rootElement, nextNode);
             }
-            else{
-                const parent = toElement(placement);
+            else if(placement.under){
+                const parent = toElement(placement.under);
                 parent.appendChild(this.rootElement);
             }
         }
