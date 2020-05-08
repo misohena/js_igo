@@ -1505,6 +1505,12 @@ class GameView{
             this.update();
         });
     }
+    createToggleLastMoveMark(updators){
+        return createCheckbox("最終着手", this.showLastMoveMark, e=>{
+            this.showLastMoveMark = e.target.checked;
+            this.update();
+        });
+    }
     createToggleComment(updators){
         return createCheckbox("コメント", this.showComment, e=>{
             this.showComment = e.target.checked;
@@ -1774,13 +1780,14 @@ class GameView{
                 // Visibility
                 "ToggleBranchText": "createToggleBranchText",
                 "ToggleMoveNumber": "createToggleMoveNumber",
+                "ToggleLastMoveMark": "createToggleLastMoveMark",
                 "ToggleRotate180": "createToggleRotate180",
                 "ToggleComment": "createToggleComment",
                 // Comment
                 "Comment": "createCommentTextArea",
                 // Group
                 "MoveControl": ["Menu", "Pass", "Resign"],
-                "HistoryControl": ["UndoAll", "Undo", "Redo", "RedoAll", "ToggleBranchText", "ToggleMoveNumber", "ToggleComment", "ToggleRotate180"],
+                "HistoryControl": ["UndoAll", "Undo", "Redo", "RedoAll", "ToggleBranchText", "ToggleMoveNumber", "ToggleLastMoveMark", "ToggleComment", "ToggleRotate180"],
                 "UndoRedo": ["UndoAll", "Undo", "Redo", "RedoAll"]
             };
         }
