@@ -60,7 +60,8 @@ function createElement(elemName, attrs, children, parent){
     return createElementNS(null, elemName, attrs, children, parent);
 }
 
-function createDialogWindow(attrs, children, parent){
+function createDialogWindow(attrs, children, parent, opt){
+    opt = opt || {};
     parent = parent || document.body;
     if(!attrs){
         attrs = {};
@@ -90,7 +91,9 @@ function createDialogWindow(attrs, children, parent){
     function onOutsideClick(e){
         if(isEventOutside(e)){
             e.stopPropagation();
-            close();
+            if(opt.closeOnOutsideClick){
+                close();
+            }
         }
     }
     function onOutsideEvent(e){
@@ -145,7 +148,7 @@ function createPopupMenu(x, y, items, parent){
             }, false);
             return itemDiv;
         })
-    ], parent);
+    ], parent, {closeOnOutsideClick:true});
     menuDiv.style.padding = "4px 1px";
 
     // supress overflow
@@ -182,6 +185,7 @@ function createTextDialog(message, text, children, onOk, parent){
         )
     ], parent);
     textarea.value = text;
+    textarea.focus();
 
     function close(){
         dialog.close();
@@ -1615,9 +1619,11 @@ class GameView{
             createElement("div", {}, [
                 createCheckbox("現在の盤面から始まる棋譜を出力", false, e=>{
                     textarea.value = this.model.toSGF(e.target.checked);
+                    textarea.select();
                 })
             ])
         );
+        textarea.select();
     }
     importSGF(){
         const {dialog, textarea} = createTextDialog(
