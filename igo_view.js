@@ -590,10 +590,10 @@ class BoardElement{
         }
         return null;
     }
-    addTextOnStone(id, x, y, text, fontSizeRate){
+    addTextOnStone(id, x, y, text, textColor, fontSizeRate){
         return this.addElementOnStone(
             id, x, y,
-            this.createText(x, y, text, this.getIntersectionTextColor(x, y, "#ddd", "#444", "#444"), fontSizeRate));
+            this.createText(x, y, text, textColor || this.getIntersectionTextColor(x, y, "#ddd", "#444", "#444"), fontSizeRate));
     }
     createOverlayText(x, y, text, fill, onClick){
         const elem = this.createText(x, y, text, fill);
