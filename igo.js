@@ -553,12 +553,83 @@ class HistoryNode{
             this.nexts.splice(newIndex, 0, move);
         }
     }
+
+    // Tree
     visitAllNodes(enter, leave){
         if(enter){enter(this);}
         for(const next of this.nexts){
             next.visitAllNodes(enter, leave);
         }
         if(leave){leave(this);}
+    }
+
+    isDescendantOf(node){
+        if(!node){
+            return false;
+        }
+        for(let ancestor = this; ancestor; ancestor = ancestor.prev){
+            if(node == ancestor){
+                return true;
+            }
+        }
+        return false;
+    }
+    isAncestorOf(node){
+        if(!node){
+            return false;
+        }
+        return node.isDescendantOf(this);
+    }
+    findDepthFirst(pred){
+        if(pred(this)){
+            return this;
+        }
+        for(const next of this.nexts){
+            const found = next.find(pred);
+            if(found){
+                return found;
+            }
+        }
+        return null;
+    }
+    findBreadthFirst(pred){
+        let curr = [this];
+        let next = [];
+        while(curr.length > 0){
+            for(const node of curr){
+                if(pred(node)){
+                    return node;
+                }
+                next.push.apply(next, node.nexts);
+            }
+            curr = next;
+            next = [];
+        }
+        return null;
+    }
+    findByQuery(queries, board){
+        if(!(queries instanceof Array)){
+            queries = [queries];
+        }
+        let curr = this;
+        for(let q of queries){
+            // move number : forward first variations
+            if(typeof(q) == "number"){
+                while(q > 0 && curr.nexts.length > 0){
+                    curr = curr.nexts[0];
+                    --q;
+                }
+            }
+            // SGF point string : find point breadth-first
+            else if(typeof(q) == "string"){ //coordinate
+                const pos = igo.parseSGFMove(q, board.w, board.h); ///@todo not supported !isMove() (ex:resign, setup node)
+                const target = curr.findBreadthFirst(node=>node.pos==pos);
+                if(target){
+                    curr = target;
+                }
+            }
+        }
+        return curr;
     }
 
     // Properties
@@ -732,6 +803,23 @@ class HistoryTree{
             ++this.moveNumber;
         }
         this.pointer = this.pointer.lastVisited;
+        return true;
+    }
+    redoTo(descendant, board, game){
+        const from = this.pointer;
+        if( ! descendant.isDescendantOf(from)){
+            return false;
+        }
+        // lastVisitedをdescendantに向かって倒していく
+        for(let node = descendant; node && node != from; node = node.prev){
+            node.prev.lastVisited = node;
+        }
+        // descendantにたどり着くまでredoしていく
+        while(this.pointer != descendant){
+            if(!this.redo(board, game)){
+                return false;
+            }
+        }
         return true;
     }
     backToMove(pos, board, game){
@@ -945,8 +1033,14 @@ class Game{
 
     getMoveNumber(){return this.history.getMoveNumber();}
 
-    undo(){this.history.undo(this.board, this);}
-    redo(){this.history.redo(this.board, this);}
+    undo(){return this.history.undo(this.board, this);}
+    redo(){return this.history.redo(this.board, this);}
+    redoTo(descendant){return this.history.redoTo(descendant, this.board, this);}
+    redoByQuery(queries){
+        return this.history.redoTo(
+            this.history.getCurrentNode().findByQuery(queries, this.board),
+            this.board, this);
+    }
     undoAll(){this.history.undoAll(this.board, this);}
     redoAll(){this.history.redoAll(this.board, this);}
     backToMove(pos){this.history.backToMove(pos, this.board, this);}
@@ -1416,6 +1510,7 @@ function parseSGFMove(value, w, h){
     }
     return parseSGFPoint(value, w, h);
 }
+igo.parseSGFMove = parseSGFMove;
 function parseSGFPoint(value, w, h){
     const p = parseSGFPointXY(value, w, h);
     return toPosition(p.x, p.y, w);

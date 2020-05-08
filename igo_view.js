@@ -709,6 +709,12 @@ class GameView{
 
         // Set Game Model
         this.resetGame(game || new Game(9));
+
+        // Show the node specified by path
+        if(this.opt.path){
+            game.redoByQuery(this.opt.path);
+            this.update();
+        }
     }
 
     resetGame(game){
