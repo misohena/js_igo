@@ -6,6 +6,12 @@
 
 [[file:./screenshot.png]]
 
+** 実行方法
+Github Pagesに置いてあります。
+
+- 碁盤 :: [[https://misohena.github.io/js_igo/]]
+- 埋め込み使用例 :: [[https://misohena.github.io/js_igo/examples.html]]
+
 ** 主な機能
 
 - 盤面サイズは 1x1 ～ 52x52 までの非正方形に対応
@@ -30,17 +36,102 @@ SGFは次のプロパティに対応しています。
 
 囲碁クエストでエクスポートしたSGFをペーストして確認したほか、拾ってきた詰碁の棋譜をペーストして確認しています。
 
-* 使用方法
-** 碁盤
-Github Pagesに置いてあります。
+* 埋め込み使用方法
 
-- [[https://misohena.github.io/js_igo/]]
+DOMツリーに碁盤を追加するにはGameViewオブジェクトを作成します。
 
-** 埋め込み使用例
+#+begin_src js
+var gameView = new igo.GameView(placement, game, options)
+#+end_src
 
-- [[https://misohena.github.io/js_igo/examples.html]]
+/placement/ はHTML要素をどこに配置するかを指定します。次のいずれかを指定出来ます。
 
-使い方はソースを参照のこと。
+- /<親要素または親要素のid>/ : 指定した要素の子として追加します。underと同じです
+- {under: /<親要素または親要素のid>/ } : 指定した要素の子として追加します
+- {after: /<前の要素または前の要素のid>/ } : 指定した要素の次に追加します。
+- {before: /<次の要素または次の要素のid>/ } : 指定した要素の前に追加します。
+- /<script要素またはscript要素のid>/ : 要素を指定すると通常はunderと同じになりますが、script要素の場合は例外的にafterと同じ効果を持ちます。例えば =document.currentScript= を渡すと現在実行中のscript要素の次に挿入します
+- null : 今は追加せず後で追加します。追加した直後に別途 =gameView.fitBoardSizeToWindowAndParent()= を呼び出してサイズの調整を行う必要があります
+
+  例:
+  #+begin_src js
+const gameView = new igo.GameView(null);
+parent.appendChild(gameView.rootElement);
+gameView.fitBoardSizeToWindowAndParent();
+  #+end_src
+
+/game/ は表示対象のゲームの状態を保持するオブジェクトです。次のいずれかを指定出来ます。
+
+- new igo.Game(/<w>/, /<h>/) : 空の盤面を作成します
+- igo.Game.fromSGF("/<SGF>/") : SGF(棋譜)からゲームオブジェクトを作成します
+- "/<SGF>/" : 文字列を渡すとSGFと見なして自動的にゲームオブジェクトを作成します
+- undefined : /game/ を省略した場合は =new igo.Game(9)= と同じになります
+
+/options/ はGameViewの動作をカスタマイズするための様々なオプションを保持するオブジェクトです。
+
+| プロパティ               | 説明                                                 | 指定可能な値                                                   | デフォルト                                                                |
+|--------------------------+------------------------------------------------------+----------------------------------------------------------------+---------------------------------------------------------------------------|
+| editable                 | 編集可能か                                           | boolean                                                        | true                                                                      |
+| showBranches             | 盤面に分岐を文字で表示するか                         | boolean                                                        | false                                                                     |
+| showMoveNumber           | 石の上に着手番号を表示するか                         | boolean                                                        | false                                                                     |
+| showLastMoveMark         | 最後に置いた石にマークを表示するか                   | boolean                                                        | false                                                                     |
+| rotate180                | 盤面を180度回転させるか(白から見た図にするか)        | boolean                                                        | false                                                                     |
+| preventRedoAtBranchPoint | 分岐点でリドゥを禁止するか(必ず着手点を選択させるか) | boolean                                                        | false                                                                     |
+| autoMove                 | 自動着手モード                                       | igo.BLACK, igo.WHITE, true, false                              | false                                                                     |
+| showComment              | コメント欄を表示するか                               | boolean                                                        | false                                                                     |
+| path                     | 最初に表示するノード                                 | number(手数), string(SGF座標), Array(numberまたはstringの配列) | ルートを表示                                                              |
+| gridInterval             | 盤面の線の間隔(px)                                   | number                                                         |                                                                           |
+| gridMargin               | 盤面の格子の外の空き(px)                             | number                                                         |                                                                           |
+| ui                       | UI要素の配置                                         | object                                                         | {top:["GameStatus"], bottom:["MoveControl", "HistoryControl", "Comment"]} |
+
+** options.path
+
+options.pathは最初に表示する盤面を指定します。
+
+数字を指定した場合、その数の手数だけ後の盤面を選択します。分岐がある場合は最初の分岐を選びます。
+
+文字列を指定した場合、SGF座標で交点を指定したものとみなし、その場所に着手した最も手数が少ない盤面を選択します。
+
+配列を指定した場合、配列の各要素での選択を繰り返してたどり着いた盤面を選択します。
+
+例:
+- 12 :: 最初から12手目の盤面
+- "cd" :: 最初に3の4に着手した盤面
+- ["cc", "fc"] :: 最初に左上三々(cc)に着手した後、次に最初に二間開き(fc)した盤面
+- ["cc", 2] :: 三々に着手した後の2手目
+
+** options.ui
+
+options.uiはUI要素(ボタン類)の配置を指定します。
+
+#+begin_src js
+{
+    top: 盤の上に表示する要素の配列,
+    bottom: 盤の下に表示する要素の配列,
+}
+#+end_src
+
+配列の要素として次のものが指定できます。
+
+| 要素               | 説明                                                                                                               |
+|--------------------+--------------------------------------------------------------------------------------------------------------------|
+| "GameStatus"       | ゲームの状態を表示するテキスト                                                                                     |
+| "Menu"             | メインメニューボタン                                                                                               |
+| "Pass"             | パスボタン                                                                                                         |
+| "Resign"           | 投了ボタン                                                                                                         |
+| "UndoAll"          | 最初に戻るボタン                                                                                                   |
+| "Undo"             | 一つ戻るボタン                                                                                                     |
+| "Redo"             | 一つ進むボタン                                                                                                     |
+| "RedoAll"          | 最後に進むボタン                                                                                                   |
+| "ToggleBranchText" | 分岐表示チェックボックス                                                                                           |
+| "ToggleMoveNumber" | 着手番号表示チェックボックス                                                                                       |
+| "ToggleRotate180"  | 180度回転チェックボックス                                                                                          |
+| "ToggleComment"    | コメント表示チェックボックス                                                                                       |
+| "Comment"          | コメント欄                                                                                                         |
+| "MoveControl"      | ["Menu", "Pass", "Resign"]                                                                                         |
+| "HistoryControl"   | ["UndoAll", "Undo", "Redo", "RedoAll", "ToggleBranchText", "ToggleMoveNumber", "ToggleComment", "ToggleRotate180"] |
+| "UndoRedo"         | ["UndoAll", "Undo", "Redo", "RedoAll"]                                                                             |
+| 配列               | コントロールバー(div.igo-control-bar)の中に要素を作成する                                                          |
 
 * 開発メモ
 ** 基本的な構造

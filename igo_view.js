@@ -624,25 +624,16 @@ class GameView{
         }
         this.opt = opt = opt || {};
         this.editable = toBool(opt.editable, true);
+            // Board Option
         this.showBranches = toBool(opt.showBranchText, false);
         this.showMoveNumber = toBool(opt.showMoveNumber, false);
         this.showLastMoveMark = toBool(opt.showLastMoveMark, false);
         this.rotate180 = toBool(opt.rotate180, false);
+            // History(Undo/Redo) Option
         this.preventRedoAtBranchPoint = toBool(opt.preventRedoAtBranchPoint, false);
         this.autoMove = opt.autoMove; //BLACK, WHITE, true, false
-        const showUI = toBool(opt.showUI, true);
+            // Comment Visibility
         this.showComment = toBool(opt.showComment, false);
-        this.commentLocation = opt.commentLocation; //TOP, BOTTOM
-        this.showMenu = toBool(opt.showMenu, showUI);
-        this.showPassResign = toBool(opt.showPassResign, showUI);
-        this.showMoveController = this.showMenu || this.showPassResign;
-        const showVisibilitySettings = toBool(opt.showVisibilitySettings, showUI);
-        this.showCheckboxBranch = toBool(opt.showCheckboxBranch, showVisibilitySettings);
-        this.showCheckboxMoveNumber = toBool(opt.showCheckboxMoveNumber, showVisibilitySettings);
-        this.showCheckboxComment = toBool(opt.showCheckboxComment, showVisibilitySettings);
-        this.showCheckboxRotate180 = toBool(opt.showCheckboxRotate180, showVisibilitySettings);
-        this.showHistoryController = toBool(opt.showHistoryController, showUI || this.showCheckboxBranch || this.showCheckboxComment || this.showCheckboxRotate180);
-        this.showGameStatus = toBool(opt.showGameStatus, showUI);
 
         // Mode
         this.mode = null;
@@ -651,10 +642,7 @@ class GameView{
         // Root Element
         this.rootElement = createElement("div", {"class":"igo-game"}, [
             // Top Bar
-            this.topBar = createElement("div", {"class":"igo-top-bar"}, [
-                // Game Status Bar
-                this.createGameStatusBar()
-            ]),
+            this.topBar = createElement("div", {"class":"igo-top-bar"}, []),
 
             // Board Wrapper
             this.boardWrapperRow = createElement("div", {//for board size fitting to parent width
@@ -665,9 +653,11 @@ class GameView{
                 ]),
 
             // Bottom Bar
-            this.bottomBar = createElement("div", {"class":"igo-bottom-bar"}, [
-            ])
+            this.bottomBar = createElement("div", {"class":"igo-bottom-bar"}, [])
         ]);
+
+        // Init UI
+        this.initMoveModeUI();
 
         // Insert Root Element
         //
@@ -701,11 +691,6 @@ class GameView{
                 parent.appendChild(this.rootElement);
             }
         }
-
-        // Main UI (Move Mode only?)
-        this.createMoveController();
-        this.createHistoryController();
-        this.createCommentTextArea();
 
         // Set Game Model
         this.resetGame(game || new Game(9));
@@ -766,23 +751,12 @@ class GameView{
         this.startMoveMode();
     }
 
-    hideMainUI(){
-        if(this.moveController){
-            this.moveController.style.display = "none";
-        }
-        if(this.historyController){
-            this.historyController.style.display = "none";
-        }
-        this.commentTextArea.style.display = "none";
-    }
-    showMainUI(){
-        if(this.moveController){
-            this.moveController.style.display = "";
-        }
-        if(this.historyController){
-            this.historyController.style.display = "";
-        }
-        this.updateCommentTextAreaDisplay();
+
+    //
+    // Main Menu
+    //
+    createMenuButton(){
+        return createButton("メニュー", (e)=>this.onMenuButtonClick(e));
     }
 
     onMenuButtonClick(e){
@@ -876,12 +850,10 @@ class GameView{
 
     update(){
         this.updateBoard();
-        this.updateStatusText();
-        this.updateCommentTextArea();
-        this.updateHistoryController();
         this.updateLastMoveMark();
         this.updateMarkProperty();
         this.updateBranchTexts();
+        this.updateMoveModeUI();
     }
 
 
@@ -1022,17 +994,15 @@ class GameView{
         }
     }
 
-    createMoveController(){
-        if(!this.showMoveController){
-            return;
-        }
-        const moveDiv = this.moveController = createElement(
-            "div", {"class": "igo-control-bar"}, [
-                this.showMenu ? createButton("メニュー", (e)=>this.onMenuButtonClick(e)) : null,
-                this.showPassResign ? createButton("パス", ()=>this.pass()) : null,
-                this.showPassResign ? createButton("投了", ()=>this.resign()) : null
-                //createButton("分析", ()=>this.onAnalyzeButtonClick())
-            ], this.bottomBar);
+    createPassButton(updators){
+        const button = createButton("パス", ()=>this.pass());
+        updators.push(()=>{button.disabled = this.model.isFinished();});
+        return button;
+    }
+    createResignButton(updators){
+        const button = createButton("投了", ()=>this.resign());
+        updators.push(()=>{button.disabled = this.model.isFinished();});
+        return button;
     }
 
     move(pos){
@@ -1357,37 +1327,32 @@ class GameView{
     //
     // Game Status
     //
-    createGameStatusBar(){
-        if(!this.showGameStatus){
-            return null;
-        }
-        return createElement("div", {"class": "igo-control-bar"}, [
-            this.statusText = document.createTextNode("対局")
+    createGameStatusBar(updators){
+        let statusText;
+        const div = createElement("div", {"class": "igo-control-bar"}, [
+            statusText = document.createTextNode("対局")
         ]);
-    }
+        updators.push(()=>{
+            if(!this.model){
+                return;
+            }
+            const gameStatus = this.model.isFinished() ?
+                  "終局 勝者=" + (
+                      this.model.getWinner() == BLACK ? "黒" :
+                          this.model.getWinner() == WHITE ? "白" : "持碁") :
+                  "対局中";
 
-    updateStatusText(){
-        if(!this.statusText){
-            return;
-        }
-        if(!this.model){
-            return;
-        }
-        const gameStatus = this.model.isFinished() ?
-              "終局 勝者=" + (
-                  this.model.getWinner() == BLACK ? "黒" :
-                  this.model.getWinner() == WHITE ? "白" : "持碁") :
-              "対局中";
+            const boardStatus =
+                  "手数=" + String(this.model.getMoveNumber()) + " " +
+                  (this.model.getTurn() == BLACK ? "黒番" : "白番") + " " +
+                  "アゲハマ " +
+                  "黒=" + String(this.model.getPrisoners(BLACK)) +
+                  " " +
+                  "白=" + String(this.model.getPrisoners(WHITE));
 
-        const boardStatus =
-              "手数=" + String(this.model.getMoveNumber()) + " " +
-              (this.model.getTurn() == BLACK ? "黒番" : "白番") + " " +
-              "アゲハマ " +
-              "黒=" + String(this.model.getPrisoners(BLACK)) +
-              " " +
-              "白=" + String(this.model.getPrisoners(WHITE));
-
-        this.statusText.data = gameStatus + " " + boardStatus;
+            statusText.data = gameStatus + " " + boardStatus;
+        });
+        return div;
     }
 
 
@@ -1395,67 +1360,83 @@ class GameView{
     // History & Branches
     //
 
-    createHistoryController(){
-        if(!this.showHistoryController){
-            return null;
-        }
-        const buttons = this.historyControllerButtons = {};
-        return this.historyController = createElement("div", {"class": "igo-control-bar"}, [
-            buttons.first = createButton("|<", e=>{
-                e.preventDefault();
-                this.model.undoAll();
-                this.update();
-            }),
-            buttons.prev = createButton("<", e=>{
-                e.preventDefault();
-                this.model.undo();
-                this.update();
-            }),
-            buttons.next = createButton(">", e=>{
-                e.preventDefault();
-                if(this.isPreventedRedo()){
-                    return;
-                }
-                this.model.redo();
-                this.update();
-            }),
-            buttons.last = createButton(">|", e=>{
-                e.preventDefault();
-                if(this.isPreventedRedo()){
-                    return;
-                }
-                this.model.redoAll();
-                this.update();
-            }),
-            this.showCheckboxBranch ? createCheckbox("分岐表示", this.showBranches, e=>{
-                this.showBranches = e.target.checked;
-                this.update();
-            }) : null,
-            this.showCheckboxMoveNumber ? createCheckbox("着手番号", this.showMoveNumber, e=>{
-                this.showMoveNumber = e.target.checked;
-                this.invalidAllIntersections();
-                this.update();
-            }) : null,
-            this.showCheckboxComment ? createCheckbox("コメント", this.showComment, e=>{
-                this.showComment = e.target.checked;
-                this.updateCommentTextAreaDisplay();
-            }) : null,
-            this.showCheckboxRotate180 ? createCheckbox("180度回転", this.rotate180, e=>{
-                this.rotate180 = e.target.checked;
-                this.invalidAllIntersections();
-                this.update();
-            }) : null
-        ], this.bottomBar);
+    createUndoAllButton(updators){
+        const button = createButton("|<", e=>{
+            e.preventDefault();
+            this.model.undoAll();
+            this.update();
+        });
+        updators.push(()=>{
+            button.disabled = !this.model.history.getPreviousNode();
+        });
+        return button;
     }
-    updateHistoryController(){
-        if(this.historyControllerButtons){
-            const node = this.model.history.getCurrentNode();
-            this.historyControllerButtons.first.disabled = !node.prev;
-            this.historyControllerButtons.prev.disabled = !node.prev;
-            this.historyControllerButtons.next.disabled = !node.lastVisited || this.isPreventedRedo();
-            this.historyControllerButtons.last.disabled = !node.lastVisited || this.isPreventedRedo();
-        }
+    createUndoButton(updators){
+        const button = createButton("<", e=>{
+            e.preventDefault();
+            this.model.undo();
+            this.update();
+        });
+        updators.push(()=>{
+            button.disabled = !this.model.history.getPreviousNode();
+        });
+        return button;
     }
+    createRedoButton(updators){
+        const button = createButton(">", e=>{
+            e.preventDefault();
+            if(this.isPreventedRedo()){
+                return;
+            }
+            this.model.redo();
+            this.update();
+        });
+        updators.push(()=>{
+            button.disabled = !this.model.history.getCurrentNode().lastVisited || this.isPreventedRedo();
+        });
+        return button;
+    }
+    createRedoAllButton(updators){
+        const button = createButton(">|", e=>{
+            e.preventDefault();
+            if(this.isPreventedRedo()){
+                return;
+            }
+            this.model.redoAll();
+            this.update();
+        });
+        updators.push(()=>{
+            button.disabled = !this.model.history.getCurrentNode().lastVisited || this.isPreventedRedo();
+        });
+        return button;
+    }
+    createToggleBranchText(updators){
+        return createCheckbox("分岐表示", this.showBranches, e=>{
+            this.showBranches = e.target.checked;
+            this.update();
+        });
+    }
+    createToggleMoveNumber(updators){
+        return createCheckbox("着手番号", this.showMoveNumber, e=>{
+            this.showMoveNumber = e.target.checked;
+            this.invalidAllIntersections();
+            this.update();
+        });
+    }
+    createToggleComment(updators){
+        return createCheckbox("コメント", this.showComment, e=>{
+            this.showComment = e.target.checked;
+            this.update();
+        });
+    }
+    createToggleRotate180(updators){
+        return createCheckbox("180度回転", this.rotate180, e=>{
+            this.rotate180 = e.target.checked;
+            this.invalidAllIntersections();
+            this.update();
+        });
+    }
+
     isPreventedRedo(){
         return this.preventRedoAtBranchPoint &&
             this.model.history.getNextNodes().length >= 2;
@@ -1573,75 +1554,79 @@ class GameView{
 
     // Comment
 
-    createCommentTextArea(){
+    createCommentTextArea(updators){
+        let textarea;
+        let targetNode = null;
+
+        const updateTextAreaDisplay = ()=>{
+            // update visibility
+            const newDisplay = this.showComment ? "" : "none";
+            if(textarea.style.display != newDisplay){
+                textarea.style.display = newDisplay;
+                this.onBarHeightChanged();
+            }
+        };
+        const updateTextAreaContent = ()=>{
+            const newNode = this.model.history.getCurrentNode();
+            const newText = newNode && newNode.hasComment() ? newNode.getComment() : "";
+
+            if(newNode !== targetNode || newText != textarea.value){
+                targetNode = newNode;
+
+                if(this.editable){
+                    textarea.value = newText;
+                }
+                else{
+                    while(textarea.firstChild){
+                        textarea.removeChild(textarea.firstChild);
+                    }
+                    textarea.appendChild(document.createTextNode(newText));
+                }
+            }
+        };
+        const updateCommentPropertyFromTextArea = ()=>{
+            if(!this.editable){
+                return;
+            }
+            // reflect comment textarea => property
+            if(targetNode){
+                const commentNew = textarea.value;
+                if(commentNew){
+                    if(commentNew != targetNode.getComment()){
+                        targetNode.setComment(commentNew);///@todo use model.setCommentToCurrentNode?
+                    }
+                }
+                else{
+                    if(targetNode.hasComment()){
+                        targetNode.removeComment();
+                        updateTextAreaContent();
+                    }
+                }
+            }
+        };
+
         const div = createElement("div", {"class":"igo-comment igo-control-bar"}, [
-            this.commentTextArea =
+            textarea =
                 this.editable ?
                 createElement("textarea", {"class":"igo-comment-textarea"}) :
                 createElement("pre", {"class":"igo-comment-pre"})
-        ], this.commentLocation == "TOP" ? this.topBar : this.bottomBar);
+        ]);
 
         if(this.editable){
-            this.commentTextArea.addEventListener("change", (e)=>this.onCommentTextAreaChange(e), false);
+            textarea.addEventListener("change", updateCommentPropertyFromTextArea, false);
         }
-        this.commentTextAreaTarget = null;
-        this.updateCommentTextAreaDisplay();
+
+        // updator
+        updators.push(()=>{
+            updateTextAreaDisplay();
+            updateCommentPropertyFromTextArea();
+            updateTextAreaContent();
+        });
+
         return div;
     }
 
-    updateCommentTextAreaDisplay(){
-        const newDisplay = this.showComment ? "" : "none";
-        if(this.commentTextArea.style.display != newDisplay){
-            this.commentTextArea.style.display = newDisplay;
-            this.onBarHeightChanged();
-        }
-    }
 
-    updateCommentTextArea(){
-        if(this.commentTextArea){
-            this.updateCommentPropertyFromTextArea();
-
-            const node = this.model.history.getCurrentNode();
-            let newText = "";
-            if(node){
-                this.commentTextAreaTarget = node;
-                newText = node.hasComment() ? node.getComment() : "";
-            }
-            else{
-                this.commentTextAreaTarget = null;
-                newText = "";
-            }
-            if(this.editable){
-                this.commentTextArea.value = newText;
-            }
-            else{
-                this.commentTextArea.innerHTML = newText;
-            }
-        }
-    }
-    onCommentTextAreaChange(e){
-        this.updateCommentPropertyFromTextArea();
-    }
-    updateCommentPropertyFromTextArea(){
-        if(!this.editable){
-            return;
-        }
-        // reflect comment textarea => property
-        if(this.commentTextAreaTarget){
-            const commentNew = this.commentTextArea.value;
-            if(commentNew){
-                if(commentNew != this.commentTextAreaTarget.getComment()){
-                    this.commentTextAreaTarget.setComment(commentNew);///@todo use model.setCommentToCurrentNode?
-                }
-            }
-            else{
-                if(this.commentTextAreaTarget.hasComment()){
-                    this.commentTextAreaTarget.removeComment();
-                    this.updateCommentTextArea();
-                }
-            }
-        }
-    }
 
 
     //
@@ -1689,6 +1674,97 @@ class GameView{
         this.startMode(new MoveMode());
     }
 
+    initUIMap(){
+        if(!this.uiMap){
+            this.uiMap = {
+                "GameStatus": "createGameStatusBar",
+                "Menu": "createMenuButton",
+                // Move
+                "Pass": "createPassButton",
+                "Resign": "createResignButton",
+                // History
+                "UndoAll": "createUndoAllButton",
+                "Undo": "createUndoButton",
+                "Redo": "createRedoButton",
+                "RedoAll": "createRedoAllButton",
+                // Visibility
+                "ToggleBranchText": "createToggleBranchText",
+                "ToggleMoveNumber": "createToggleMoveNumber",
+                "ToggleRotate180": "createToggleRotate180",
+                "ToggleComment": "createToggleComment",
+                // Comment
+                "Comment": "createCommentTextArea",
+                // Group
+                "MoveControl": ["Menu", "Pass", "Resign"],
+                "HistoryControl": ["UndoAll", "Undo", "Redo", "RedoAll", "ToggleBranchText", "ToggleMoveNumber", "ToggleComment", "ToggleRotate180"],
+                "UndoRedo": ["UndoAll", "Undo", "Redo", "RedoAll"]
+            };
+        }
+    }
+    createUIElement(name, updators){
+        this.initUIMap();
+        let fun = this.uiMap[name];
+        if(typeof(fun) == "string"){
+            return this[fun](updators);
+        }
+        else if(typeof(fun) == "function"){
+            return fun(updators);
+        }
+        else if(fun instanceof Array){
+            return this.createUIControlBar(fun, updators);
+        }
+        else{
+            return null;
+        }
+    }
+    createUIControlBar(items, updators){
+        if(!items){
+            return null;
+        }
+        return createElement(
+            "div", {"class":"igo-control-bar"},
+            items.map(item=>{
+                if(typeof(item) == "string"){
+                    return this.createUIElement(item, updators);
+                }
+                else if(item instanceof Array){
+                    return this.createUIControlBar(item, updators);
+                }
+                else{
+                    return null;
+                }
+            }));
+    }
+
+    initMoveModeUI(){
+        const ui = this.opt.ui || {
+            top: ["GameStatus"],
+            bottom: ["MoveControl", "HistoryControl", "Comment"]
+        };
+        const updators = [];
+        const top = createElement("div", {}, this.createUIControlBar(ui.top, updators), this.topBar);
+        const bottom = createElement("div", {}, this.createUIControlBar(ui.bottom, updators), this.bottomBar);
+        this.moveModeUI = {updators, elements:[top, bottom]};
+    }
+    hideMoveModeUI(){
+        for(const element of this.moveModeUI.elements){
+            element.style.display = "none";
+        }
+        this.onBarHeightChanged();
+    }
+    showMoveModeUI(){
+        for(const element of this.moveModeUI.elements){
+            element.style.display = "";
+        }
+        this.onBarHeightChanged();
+    }
+    updateMoveModeUI(){
+        for(const updator of this.moveModeUI.updators){
+            updator();
+        }
+    }
+
+
     //
     // Free Edit Mode
     //
@@ -1711,7 +1787,7 @@ class GameView{
                     this.createController();
                     this.hookEventHandlers();
                     this.alternately = false;
-                    gameView.hideMainUI();
+                    gameView.hideMoveModeUI();
                     gameView.boardElement.setStonePointerEventsEnabled(false); //石が盤面上のmouse/touchイベントを邪魔しないようにする
                     this.oldBoard = gameView.model.board.clone(); //開始時点の盤面
                 }
@@ -1721,7 +1797,7 @@ class GameView{
                     this.alive = false;
                     this.unhookEventHandlers();
                     this.controlBar.parentNode.removeChild(this.controlBar);
-                    gameView.showMainUI();
+                    gameView.showMoveModeUI();
                     gameView.boardElement.setStonePointerEventsEnabled(true);
 
                     // update setup property
@@ -1898,7 +1974,7 @@ class GameView{
                     this.alive = true;
                     this.type = "cross";
                     this.createController();
-                    gameView.hideMainUI();
+                    gameView.hideMoveModeUI();
                     gameView.boardElement.setStonePointerEventsEnabled(false); //石が盤面上のmouse/touchイベントを邪魔しないようにする
                 }
             }
@@ -1906,7 +1982,7 @@ class GameView{
                 if(this.alive){
                     this.alive = false;
                     this.controlBar.parentNode.removeChild(this.controlBar);
-                    gameView.showMainUI();
+                    gameView.showMoveModeUI();
                     gameView.boardElement.setStonePointerEventsEnabled(true);
                 }
             }
