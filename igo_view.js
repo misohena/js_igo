@@ -271,13 +271,59 @@ class BoardElement{
         const boardPixelW = this.boardPixelW = this.gridMargin*2+this.gridInterval*(this.w-1);
         const boardPixelH = this.boardPixelH = this.gridMargin*2+this.gridInterval*(this.h-1);
 
+        const lineWidth = 1;
+        const starRadius = 2;
+
         const rootElement = this.rootElement = this.element = createSVG(
             "svg", {"class": "igo-board"},
             [
+                this.defineStoneGradient(),
+
+                // Board
                 createSVG("rect",{x:0, y:0, width:boardPixelW, height:boardPixelH, fill:"#e3aa4e"}),
-                this.defineStoneGradient()
+
+                // Grid Root (origin is top left of grid)
+                this.gridRoot = createSVG("g", {
+                    "class":"igo-board-grid-root",
+                    style:"pointer-events:none;",
+                    transform:"translate(" + (gridMargin-0.5) + " " + (gridMargin-0.5) + ")" //adjust pixel coordinates for sharper lines
+                },[
+                    // Grid
+                    createSVG("g", {"class":"igo-board-grid"}, [
+                        // Lines
+                        Array.from({length:w}, (u,x)=>{
+                            const lineX = gridInterval * x;
+                            return createSVG("line", {x1:lineX, y1:-lineWidth/2, x2:lineX, y2:gridInterval*(h-1)+lineWidth/2, stroke:"black", "stroke-width":lineWidth});
+                        }),
+                        Array.from({length:h}, (u,y)=>{
+                            const lineY = gridInterval * y;
+                            return createSVG("line", {y1:lineY, x1:-lineWidth/2, y2:lineY, x2:gridInterval*(w-1)+lineWidth/2, stroke:"black", "stroke-width":lineWidth});
+                        }),
+                        // Stars
+                        (w&1 && h&1) ? createSVG("circle", {cx:gridInterval*((w-1)/2), cy:gridInterval*((h-1)/2), r:starRadius}) : null,
+                        (w>=13 && h>=13) ? [
+                            createSVG("circle", {cx:gridInterval*3, cy:gridInterval*3, r:starRadius}),
+                            createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*3, r:starRadius}),
+                            createSVG("circle", {cx:gridInterval*3, cy:gridInterval*(h-4), r:starRadius}),
+                            createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*(h-4), r:starRadius})
+                        ] : null
+                    ]),
+
+                    // Layers
+                    this.shadows = createSVG("g", {"class":"igo-board-shadows"}),
+                    this.stones = createSVG("g", {"class":"igo-board-stones"}),
+                    this.overlays = createSVG("g", {"class":"igo-board-overlays"}),
+                ])
+
             ]);
 
+        // Intersections
+        this.intersections = new Array(w * h);
+        for(let pos = 0; pos < this.intersections.length; ++pos){
+            this.intersections[pos] = {state:EMPTY, elements:null};
+        }
+
+        // Viewport
         this.elementScale = 1.0; //SVG要素のサイズの縮尺(width=, height=に影響)
         this.scrollScale = 1.0; //表示する内容の縮尺(viewBox=に影響) 1.0 ~
         this.scrollX = 0; // スクロール位置(viewBox=に影響) 0 ~ (this.scrollScale - 1) * this.viewArea.width
@@ -285,36 +331,7 @@ class BoardElement{
         this.viewArea = {left:0, top:0, right:boardPixelW, bottom:boardPixelH, width:boardPixelW, height:boardPixelH}; //盤の中の表示する範囲(viewBox=に影響)
         this.updateWidthHeightViewBox();
 
-        const gridRoot = this.gridRoot = createSVG("g", {
-            "class":"igo-board-grid-root",
-            transform:"translate(" + (gridMargin-0.5) + " " + (gridMargin-0.5) + ")", //adjust pixel coordinates for sharper lines
-            style:"pointer-events:none;"
-        }, null, rootElement);
-
-        // Grid
-        const lineWidth = 1;
-        const starRadius = 2;
-        const grid = createSVG("g", {"class":"igo-board-grid"}, [
-            // Lines
-            Array.from({length:w}, (u,x)=>{
-                const lineX = gridInterval * x;
-                return createSVG("line", {x1:lineX, y1:-lineWidth/2, x2:lineX, y2:gridInterval*(h-1)+lineWidth/2, stroke:"black", "stroke-width":lineWidth});
-            }),
-            Array.from({length:h}, (u,y)=>{
-                const lineY = gridInterval * y;
-                return createSVG("line", {y1:lineY, x1:-lineWidth/2, y2:lineY, x2:gridInterval*(w-1)+lineWidth/2, stroke:"black", "stroke-width":lineWidth});
-            }),
-            // Stars
-            (w&1 && h&1) ? createSVG("circle", {cx:gridInterval*((w-1)/2), cy:gridInterval*((h-1)/2), r:starRadius}) : null,
-            (w>=13 && h>=13) ? [
-                createSVG("circle", {cx:gridInterval*3, cy:gridInterval*3, r:starRadius}),
-                createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*3, r:starRadius}),
-                createSVG("circle", {cx:gridInterval*3, cy:gridInterval*(h-4), r:starRadius}),
-                createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*(h-4), r:starRadius})
-            ] : null
-        ], gridRoot);
-
-            // Input
+        // Input
         rootElement.addEventListener("click", (e)=>{
             const eventPos = this.convertEventPosition(e);
             const x = eventPos.x;
@@ -326,21 +343,18 @@ class BoardElement{
             }
         }, false);
 
-            // Intersections
-        this.intersections = new Array(w * h);
-        for(let pos = 0; pos < this.intersections.length; ++pos){
-            this.intersections[pos] = {state:EMPTY, elements:null};
-        }
-
-        this.shadows = createSVG("g", {"class":"igo-board-shadows"}, null, gridRoot);
-        this.stones = createSVG("g", {"class":"igo-board-stones"}, null, gridRoot);
-        this.overlays = createSVG("g", {"class":"igo-board-overlays"}, null, gridRoot);
     }
 
     // Position
 
-    getIntersectionX(x){return x * this.gridInterval;}
-    getIntersectionY(y){return y * this.gridInterval;}
+    toPosition(x, y){ //intersection index
+        return x >= 0 && x < this.w && y >= 0 && y < this.h ?
+            x + y * this.w :
+            -1;
+    }
+
+    toPixelX(x){return x * this.gridInterval;}
+    toPixelY(y){return y * this.gridInterval;}
 
     convertElementPosition(xOnElement, yOnElement){
         // coordinates for this.rootElement
@@ -361,6 +375,8 @@ class BoardElement{
             event.clientY - bcr.top);
     }
 
+    // Stone
+
     defineStoneGradient(){
         return createSVG("defs", {}, [
             createSVG("radialGradient", {
@@ -378,8 +394,8 @@ class BoardElement{
     }
 
     createStone(x, y, color){
-        const cx = this.getIntersectionX(x);
-        const cy = this.getIntersectionY(y);
+        const cx = this.toPixelX(x);
+        const cy = this.toPixelY(y);
         const BLACK_R = 0.5*22.2/22.2 * 0.98;
         const WHITE_R = 0.5*21.9/22.2 * 0.98;
         const r = this.gridInterval * (color == BLACK ? BLACK_R : WHITE_R);
@@ -393,6 +409,7 @@ class BoardElement{
 
         return {stone, shadow};
     }
+
     createStoneOnIntersection(x, y, color){
         const elements = this.createStone(x, y, color);
         elements.stone.style.pointerEvents = this.stonePointerEvents;
@@ -411,13 +428,15 @@ class BoardElement{
     setStonePointerEvents(pointerEvents){
         this.stonePointerEvents = pointerEvents;
         // update all stones
-        for(let pos = 0; pos < this.intersections.length; ++pos){
-            const intersection = this.intersections[pos];
+        for(const intersection of this.intersections){
             if(intersection.elements && intersection.elements.stone){
                 intersection.elements.stone.style.pointerEvents = pointerEvents;
             }
         }
     }
+
+    // Update Intersection State
+
     putStone(x, y, color){
         if(color == BLACK || color == WHITE){
             this.setIntersectionState(x, y, color);
@@ -425,20 +444,6 @@ class BoardElement{
     }
     removeStone(x, y){
         this.setIntersectionState(x, y, EMPTY);
-    }
-    toPosition(x, y){
-        return x >= 0 && x < this.w && y >= 0 && y < this.h ?
-            x + y * this.w :
-            -1;
-    }
-    removeIntersectionElements(intersection){
-        if(intersection && intersection.elements){
-            for(const name in intersection.elements){
-                const elem = intersection.elements[name];
-                elem.parentNode.removeChild(elem);
-            }
-            intersection.elements = null;
-        }
     }
     setIntersectionState(x, y, state, forced){
         const pos = this.toPosition(x, y);
@@ -456,9 +461,17 @@ class BoardElement{
             }
         }
     }
+    removeIntersectionElements(intersection){
+        if(intersection && intersection.elements){
+            for(const name in intersection.elements){
+                const elem = intersection.elements[name];
+                elem.parentNode.removeChild(elem);
+            }
+            intersection.elements = null;
+        }
+    }
     removeAllStones(){
-        for(let pos = 0; pos < this.intersections.length; ++pos){
-            const intersection = this.intersections[pos];
+        for(const intersection of this.intersections){
             this.removeIntersectionElements(intersection);
             intersection.state = EMPTY;
         }
@@ -473,14 +486,70 @@ class BoardElement{
         }
     }
 
-    createText(x, y, text, fill){
-        const textX = this.getIntersectionX(x);
-        const textY = this.getIntersectionY(y);
-        const fontSize = Math.ceil(this.gridInterval*0.65);
+    // Overlays
+
+    getIntersectionTextColor(x, y, forBlack, forWhite, forEmpty){
+        const pos = this.toPosition(x, y);
+        const state = pos >= 0 ? this.intersections[pos].state : EMPTY;
+        return state == BLACK ? (forBlack || "#fff") :
+            state == WHITE ? (forWhite || "#000") :
+            (forEmpty || "#fff");
+    }
+
+    createCircleMark(x, y, markColor){
+        return createSVG("circle", {
+            cx: this.toPixelX(x),
+            cy: this.toPixelY(y),
+            r: this.gridInterval * 0.3,
+            "stroke-width": 3,
+            stroke: markColor || this.getIntersectionTextColor(x, y),
+            fill: "none"});
+    }
+    createSquareMark(x, y, markColor){
+        const r = this.gridInterval * 0.25;
+        return createSVG("rect", {
+            x: this.toPixelX(x) - r,
+            y: this.toPixelY(y) - r,
+            width: 2*r,
+            height: 2*r,
+            "stroke-width": 3,
+            stroke: markColor || this.getIntersectionTextColor(x, y),
+            fill: "none"});
+    }
+    createTriangleMark(x, y, markColor){
+        const cx = this.toPixelX(x);
+        const cy = this.toPixelY(y);
+        const r = this.gridInterval * 0.3;
+        return createSVG("polygon", {
+            points: cx + "," + (cy - r*Math.sqrt(3)*0.55) + " " +
+                (cx + r) + "," + (cy + r*Math.sqrt(3)*0.45) + " " +
+                (cx - r) + "," + (cy + r*Math.sqrt(3)*0.45),
+            "stroke-width": 3,
+            stroke: markColor || this.getIntersectionTextColor(x, y),
+            fill: "none"});
+    }
+    createCrossMark(x, y, markColor){
+        const r = this.gridInterval * 0.25;
+        const cx = this.toPixelX(x);
+        const cy = this.toPixelY(y);
+        return createSVG("path", {
+            d: "M " + (cx-r) + "," + (cy-r) + " " +
+               "L " + (cx+r) + "," + (cy+r) + " " +
+               "M " + (cx+r) + "," + (cy-r) + " " +
+               "L " + (cx-r) + "," + (cy+r),
+            "stroke-width": 3,
+            stroke: markColor || this.getIntersectionTextColor(x, y),
+            fill: "none"});
+    }
+
+    createText(x, y, text, textColor){
+        const textX = this.toPixelX(x);
+        const textY = this.toPixelY(y);
+        const fontSize = Math.ceil(this.gridInterval*0.55);
         const textElem = createSVG("text", {
             x: textX,
             y: textY,
-            fill: fill || "#444",
+            fill: textColor || this.getIntersectionTextColor(x, y),
             style:
                 "font-weight:bold;"+
                 "font-family:arial;"+
@@ -494,32 +563,33 @@ class BoardElement{
         }
         return textElem;
     }
-    addElementOnStone(id, x, y, elementCreator, afterStone){
+    addElementOnStone(id, x, y, element, afterStone){
         const pos = this.toPosition(x, y);
         if(pos >= 0){
             const intersection = this.intersections[pos];
             if(intersection.elements && intersection.elements.stone &&
                (intersection.state == BLACK || intersection.state == WHITE)){
-                const elem = elementCreator(intersection.state);
                 if(afterStone){
-                    this.stones.insertBefore(elem, intersection.elements.stone.nextSibling);
+                    this.stones.insertBefore(element, intersection.elements.stone.nextSibling);
                 }
                 else{
-                    this.stones.appendChild(elem);
+                    this.stones.appendChild(element);
                 }
                 if(id){
-                    intersection.elements[id] = elem;
+                    intersection.elements[id] = element;
                 }
-                return elem;
+                return element;
+            }
+            else{
+                this.stones.appendChild(element);
             }
         }
         return null;
     }
     addTextOnStone(id, x, y, text){
-        this.addElementOnStone(id, x, y, (state)=>{
-            const fill = state == BLACK ? "#ddd" : "#444";
-            return this.createText(x, y, text, fill);
-        });
+        return this.addElementOnStone(
+            id, x, y,
+            this.createText(x, y, text, this.getIntersectionTextColor(x, y, "#ddd", "#444", "#444")));
     }
     createOverlayText(x, y, text, fill, onClick){
         const elem = this.createText(x, y, text, fill);
@@ -532,6 +602,12 @@ class BoardElement{
         }
         return elem;
     }
+    addOverlay(x, y, element){
+        this.overlays.appendChild(element);
+        return element;
+    }
+
+    // Viewport
 
     setElementScale(scale){
         this.elementScale = scale;
@@ -926,17 +1002,11 @@ class GameView{
             const viewX = this.toBoardElementX(node.pos);
             const viewY = this.toBoardElementY(node.pos);
 
-            this.lastMoveMark = this.boardElement.addElementOnStone(null, viewX, viewY, (state)=>{
-                const cx = this.boardElement.getIntersectionX(viewX);
-                const cy = this.boardElement.getIntersectionY(viewY);
-                const r = 0.14 * this.boardElement.gridInterval;
-                const x = cx-r;
-                const y = cy-r;
-                const width = r*2;
-                const height = r*2;
-                return createSVG("rect", {x, y, width, height, fill:"rgba(245,60,0)", style:"pointer-events:none"});
-            }, true);
-
+            const cx = this.boardElement.toPixelX(viewX);
+            const cy = this.boardElement.toPixelY(viewY);
+            const r = 0.2 * this.boardElement.gridInterval;
+            const mark = createSVG("circle", {cx, cy, r, fill:"rgba(255,30,0, 0.6)", style:"pointer-events:none"});
+            this.lastMoveMark = this.boardElement.addOverlay(viewX, viewY, mark, true);
         }
     }
 
@@ -954,19 +1024,27 @@ class GameView{
                 //apply rotate180 setting
                 const viewX = this.toBoardElementX(mark.pos);
                 const viewY = this.toBoardElementY(mark.pos);
-                const text =
-                      mark.type == "text" ? mark.text :
-                      mark.type == "circle" ? "\u25cb" :
-                      mark.type == "triangle" ? "\u25b3" :
-                      mark.type == "square" ? "\u25a1" :
-                      mark.type == "cross" ? "x" :
-                      "x";
-                const state = this.model.board.getAt(mark.pos);
-                const fill =
-                      state == BLACK ? "#fff" :
-                      state == WHITE ? "#000" :
-                      "#fff";
-                this.markElements.push(this.boardElement.createOverlayText(viewX, viewY, text, fill));
+                const markColor = this.boardElement.getIntersectionTextColor(
+                    viewX, viewY,
+                    this.showMoveNumber ? (mark.type == "text" ? "#f31" : "rgba(255, 50, 10, 0.6)") : "#fff",
+                    this.showMoveNumber ? (mark.type == "text" ? "#f31" : "rgba(255, 50, 10, 0.6)") : "#000",
+                    "#fff");
+                const element =
+                      mark.type == "text" ? this.boardElement.createText(viewX, viewY, mark.text, markColor) :
+                      mark.type == "circle" ? this.boardElement.createCircleMark(viewX, viewY, markColor) :
+                      mark.type == "triangle" ? this.boardElement.createTriangleMark(viewX, viewY, markColor) :
+                      mark.type == "square" ? this.boardElement.createSquareMark(viewX, viewY, markColor) :
+                      mark.type == "cross" ? this.boardElement.createCrossMark(viewX, viewY, markColor) :
+                      this.boardElement.createCrossMark(viewX, viewY, markColor);
+                if(mark.type == "text"){
+                    // before move number
+                    this.boardElement.addOverlay(viewX, viewY, element, markColor);
+                }
+                else{
+                    // after move number
+                    this.boardElement.addElementOnStone(null, viewX, viewY, element, true);
+                }
+                this.markElements.push(element);
             }
         }
     }
