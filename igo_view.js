@@ -542,10 +542,10 @@ class BoardElement{
             fill: "none"});
     }
 
-    createText(x, y, text, textColor){
+    createText(x, y, text, textColor, fontSizeRate){
         const textX = this.toPixelX(x);
         const textY = this.toPixelY(y);
-        const fontSize = Math.ceil(this.gridInterval*0.55);
+        const fontSize = Math.ceil(this.gridInterval* (fontSizeRate || 0.65));
         const textElem = createSVG("text", {
             x: textX,
             y: textY,
@@ -586,10 +586,10 @@ class BoardElement{
         }
         return null;
     }
-    addTextOnStone(id, x, y, text){
+    addTextOnStone(id, x, y, text, fontSizeRate){
         return this.addElementOnStone(
             id, x, y,
-            this.createText(x, y, text, this.getIntersectionTextColor(x, y, "#ddd", "#444", "#444")));
+            this.createText(x, y, text, this.getIntersectionTextColor(x, y, "#ddd", "#444", "#444"), fontSizeRate));
     }
     createOverlayText(x, y, text, fill, onClick){
         const elem = this.createText(x, y, text, fill);
@@ -982,7 +982,7 @@ class GameView{
             if(this.showMoveNumber){
                 const moveNumber = this.model.history.getMoveNumberAt(pos);
                 if(moveNumber >= 0){
-                    this.boardElement.addTextOnStone("moveNumber", viewX, viewY, "" + moveNumber);
+                    this.boardElement.addTextOnStone("moveNumber", viewX, viewY, "" + moveNumber, undefined, 0.55);
                 }
             }
         }
