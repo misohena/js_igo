@@ -738,7 +738,10 @@ class GameView{
         }
 
         // Board
-        const boardElement = this.boardElement = new BoardElement(w, h);
+        const boardElement = this.boardElement = new BoardElement(w, h, {
+            gridInterval: this.opt.gridInterval,
+            gridMargin: this.opt.gridMargin,
+        });
         boardElement.element.style.verticalAlign = "top";
         this.boardWrapperBack.appendChild(boardElement.element);
 
