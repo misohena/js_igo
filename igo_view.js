@@ -983,7 +983,7 @@ class GameView{
             const state = this.model.board.getAt(pos);
             this.boardElement.setIntersectionState(viewX, viewY, state, true); //forced reset to remove additional elements(i.e. moveNumber)
 
-            if(this.showMoveNumber){
+            if(this.showMoveNumber && state != EMPTY){
                 const moveNumber = this.model.history.getMoveNumberAt(pos);
                 if(moveNumber >= 0){
                     this.boardElement.addTextOnStone("moveNumber", viewX, viewY, "" + moveNumber, undefined, 0.55);
