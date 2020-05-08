@@ -793,7 +793,7 @@ class HistoryTree{
         if(move.pos == POS_RESIGN){
             game.setFinished(getOppositeColor(board.getTurn()));
         }
-        else if(this.pointer.pos == NPOS && this.pointer.lastVisited.pos == NPOS){
+        else if(this.pointer.pos == POS_PASS && this.pointer.lastVisited.pos == POS_PASS){
             game.setFinished(EMPTY); ///@todo 勝敗判定！
         }
         // redo board
