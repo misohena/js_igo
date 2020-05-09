@@ -1,5 +1,12 @@
 {
     "name": "js_igo",
+    "icons": [
+        {
+            "src": "icons/icon-180.png",
+            "sizes": "180x180",
+            "type": "image/png"
+        }
+    ],
     "background_color": "#ffffff",
     "start_url": "index.html",
     "display": "standalone"
