@@ -83,7 +83,7 @@ gameView.fitBoardSizeToWindowAndParent();
 | path                     | 最初に表示するノード                                 | number(手数), string(SGF座標), Array(numberまたはstringの配列) | ルートを表示                                                              |
 | gridInterval             | 盤面の線の間隔(px)                                   | number                                                         |                                                                           |
 | gridMargin               | 盤面の格子の外の空き(px)                             | number                                                         |                                                                           |
-| ui                       | UI要素の配置                                         | object                                                         | {top:["GameStatus"], bottom:["MoveControl", "HistoryControl", "Comment"]} |
+| ui                       | UI要素の配置                                         | object                                                         | {top:["GameStatus"], bottom:["MoveControl", "HistoryControl", "ViewControl", "Comment"]} |
 
 ** options.path
 
@@ -114,26 +114,27 @@ options.uiはUI要素(ボタン類)の配置を指定します。
 
 配列の要素として次のものが指定できます。
 
-| 要素                 | 説明                                                                                                               |
-|----------------------+--------------------------------------------------------------------------------------------------------------------|
-| "GameStatus"         | ゲームの状態を表示するテキスト                                                                                     |
-| "Menu"               | メインメニューボタン                                                                                               |
-| "Pass"               | パスボタン                                                                                                         |
-| "Resign"             | 投了ボタン                                                                                                         |
-| "UndoAll"            | 最初に戻るボタン                                                                                                   |
-| "Undo"               | 一つ戻るボタン                                                                                                     |
-| "Redo"               | 一つ進むボタン                                                                                                     |
-| "RedoAll"            | 最後に進むボタン                                                                                                   |
-| "ToggleBranchText"   | 分岐表示チェックボックス                                                                                           |
-| "ToggleMoveNumber"   | 着手番号表示チェックボックス                                                                                       |
-| "ToggleLastMoveMark" | 最終着手マーク表示チェックボックス                                                                                 |
-| "ToggleRotate180"    | 180度回転チェックボックス                                                                                          |
-| "ToggleComment"      | コメント表示チェックボックス                                                                                       |
-| "Comment"            | コメント欄                                                                                                         |
-| "MoveControl"        | ["Menu", "Pass", "Resign"]                                                                                         |
-| "HistoryControl"     | ["UndoAll", "Undo", "Redo", "RedoAll", "ToggleBranchText", "ToggleMoveNumber", "ToggleComment", "ToggleRotate180"] |
-| "UndoRedo"           | ["UndoAll", "Undo", "Redo", "RedoAll"]                                                                             |
-| 配列                 | コントロールバー(div.igo-control-bar)の中に要素を作成する                                                          |
+| 要素                 | 説明                                                                         |
+|----------------------+------------------------------------------------------------------------------|
+| "GameStatus"         | ゲームの状態を表示するテキスト                                               |
+| "Menu"               | メインメニューボタン                                                         |
+| "Pass"               | パスボタン                                                                   |
+| "Resign"             | 投了ボタン                                                                   |
+| "UndoAll"            | 最初に戻るボタン                                                             |
+| "Undo"               | 一つ戻るボタン                                                               |
+| "Redo"               | 一つ進むボタン                                                               |
+| "RedoAll"            | 最後に進むボタン                                                             |
+| "ToggleBranchText"   | 分岐表示チェックボックス                                                     |
+| "ToggleMoveNumber"   | 着手番号表示チェックボックス                                                 |
+| "ToggleLastMoveMark" | 最終着手マーク表示チェックボックス                                           |
+| "ToggleRotate180"    | 180度回転チェックボックス                                                    |
+| "ToggleComment"      | コメント表示チェックボックス                                                 |
+| "Comment"            | コメント欄                                                                   |
+| "MoveControl"        | ["Menu", "Pass", "Resign"]                                                   |
+| "HistoryControl"     | ["UndoAll", "Undo", "Redo", "RedoAll"]                                       |
+| "UndoRedo"           | ["UndoAll", "Undo", "Redo", "RedoAll"]                                       |
+| "ViewControl"        | ["ToggleBranchText", "ToggleMoveNumber", "ToggleComment", "ToggleRotate180"] |
+| 配列                 | コントロールバー(div.igo-control-bar)の中に要素を作成する                    |
 
 * 開発メモ
 ** 基本的な構造

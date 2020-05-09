@@ -1827,8 +1827,9 @@ class GameView{
                 "Comment": "createCommentTextArea",
                 // Group
                 "MoveControl": ["Menu", "Pass", "Resign"],
-                "HistoryControl": ["UndoAll", "Undo", "Redo", "RedoAll", "ToggleBranchText", "ToggleMoveNumber", "ToggleLastMoveMark", "ToggleComment", "ToggleRotate180"],
-                "UndoRedo": ["UndoAll", "Undo", "Redo", "RedoAll"]
+                "HistoryControl": ["UndoAll", "Undo", "Redo", "RedoAll"],
+                "UndoRedo": ["UndoAll", "Undo", "Redo", "RedoAll"],
+                "ViewControl": ["ToggleBranchText", "ToggleMoveNumber", "ToggleLastMoveMark", "ToggleComment", "ToggleRotate180"]
             };
         }
     }
@@ -1870,7 +1871,7 @@ class GameView{
     initMoveModeUI(){
         const ui = this.opt.ui || {
             top: ["GameStatus"],
-            bottom: ["MoveControl", "HistoryControl", "Comment"]
+            bottom: ["MoveControl", "HistoryControl", "ViewControl", "Comment"]
         };
         const updators = [];
         const top = createElement("div", {}, this.createUIControlBar(ui.top, updators), this.topBar);
