@@ -31,9 +31,10 @@ input[type="number"] {
     min-width: 4em;
 }
 /* UI top margin */
-input, label, textarea {
+div.igo-control-bar {
     margin-top: 0.5rem;
 }
+
 /* space between UI elements */
 input+input, input+label, label+input, label+label {
     margin-left: 0.75rem;

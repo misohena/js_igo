@@ -844,8 +844,9 @@ class GameView{
             {text:"初期化", handler:()=>this.openResetDialog(), visible:this.editable},
             {text:"SGFインポート", handler:()=>this.importSGF(), visible:this.editable},
             {text:"SGFエクスポート", handler:()=>this.exportSGF()},
+            {text:"ゲーム情報", handler:()=>this.openGameInfo()},
             {text:"フリー編集", handler:()=>this.startFreeEditMode(), visible:this.editable},
-            {text:"マーク編集", handler:()=>this.startMarkEditMode(), visible:this.editable}
+            {text:"マーク編集", handler:()=>this.startMarkEditMode(), visible:this.editable},
         ]);
     }
 
@@ -1640,6 +1641,45 @@ class GameView{
                 const game = Game.fromSGF(textarea.value);
                 this.resetGame(game);
             });
+    }
+
+    openGameInfo(){
+        const rootNode = this.model.history.getRootNode();
+        const inputs = {};
+        const dialog = createDialogWindow({}, [
+            "ゲーム情報",
+            createElement("div", {style: "overflow:auto;" + "max-height:" + Math.ceil(Math.max(60, window.innerHeight - 160)) + "px"}, [
+                createElement("table", {}, [
+                    igo.SGF_GAME_INFO_PROPERTIES.map(propType=>{
+                        const propValue = rootNode.hasProperty(propType.id) ? rootNode.getProperty(propType.id).value : "";
+                        const input = inputs[propType.id] =
+                              propType.type == "text" ? createElement("textarea", {}, propValue) :
+                              createElement("input", {type: "text", value:propValue});
+                        return createElement("tr", {}, [
+                            createElement("td", {style:"white-space:nowrap;"}, propType.desc),
+                            createElement("td", {},  input)
+                        ]);
+                    })
+                ])
+            ]),
+            createElement("div", {"class":"igo-control-bar"}, [
+                createButton("OK", e=>{
+                    for(const propType of igo.SGF_GAME_INFO_PROPERTIES){
+                        const newValue = inputs[propType.id].value;
+                        if(newValue){
+                            rootNode.addProperty(propType.id, newValue);
+                        }
+                        else{
+                            rootNode.removeProperty(propType.id);
+                        }
+                    }
+                    dialog.close();
+                }),
+                createButton("Cancel", e=>{
+                    dialog.close();
+                }),
+            ])
+        ]);
     }
 
     // Comment

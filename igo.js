@@ -1103,6 +1103,20 @@ class Game{
             "SZ[" + (board.w == board.h ? board.w : board.w + ":" + board.h) + "]" +
             (firstTurn == WHITE ? "PL[W]" : ""); ///@todo PLはsetupプロパティとして扱う
 
+        // Game Info Properties (game-infoはRoot Nodeにしかない)
+        const rootNode = this.history.getRootNode();
+        for(const propType of SGF_GAME_INFO_PROPERTIES){
+            if(rootNode.hasProperty(propType.id)){
+                const propValue = rootNode.getProperty(propType.id).value;
+                if(propType.type == "text"){
+                    rootProperties += propType.id + "[" + toSGFText(propValue) + "]";
+                }
+                else{
+                    rootProperties += propType.id + "[" + toSGFSimpleText(propValue) + "]";
+                }
+            }
+        }
+
         //
         let str = "";
         let moveNumber = 0;
@@ -1318,6 +1332,18 @@ class Game{
                         {
                             const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
                             game.history.setPropertyToCurrentNode("VW", points, true); //inherit (to subsequences, subtrees)
+                        }
+                        break;
+                    default:
+                        // Game Info Properties
+                        {
+                            const propType = getSGFGameInfoPropertyType(pid);
+                            if(propType){
+                                const value = propType.type == "text" ? parseSGFText(pvalues[0]) :
+                                      // number, real, simpletext
+                                      parseSGFSimpleText(pvalues[0]);
+                                game.history.getRootNode().addProperty(pid, value);
+                            }
                         }
                         break;
                     }
@@ -1540,5 +1566,36 @@ function parseSGFText(value){
 function parseSGFSimpleText(value){
     return value.replace(/\\(\n\r?|\r\n?)/gi, "").replace(/\\(.)/gi, "$1").replace(/(\t|\v|\n\r?|\r\n?)/gi, " ");
 }
+
+const SGF_GAME_INFO_PROPERTIES = [
+    {id:"CP", desc:"著作権者情報"},
+    {id:"US", desc:"ユーザ名"},
+    {id:"AN", desc:"評者名"},
+    {id:"SO", desc:"出典"},
+    {id:"EV", desc:"大会名"},
+    {id:"GN", desc:"対局名"},
+    {id:"RO", desc:"ラウンド数"},
+    {id:"DT", desc:"対局日"},
+    {id:"PC", desc:"対局場所"},
+    {id:"BT", desc:"黒チーム名"},
+    {id:"PB", desc:"黒番対局者名"},
+    {id:"BR", desc:"黒ランク"},
+    {id:"WT", desc:"白チーム名"},
+    {id:"PW", desc:"白番対局者名"},
+    {id:"WR", desc:"白ランク"},
+    {id:"RU", desc:"ルール"},
+    {id:"OT", desc:"制限時間方式"},
+    {id:"TM", desc:"持ち時間(秒)", type:"real"},
+    {id:"HA", desc:"置き石", type:"number"},
+    {id:"KM", desc:"コミ", type:"real"},
+    {id:"RE", desc:"結果"},
+    {id:"ON", desc:"布石名"},
+    {id:"GC", desc:"対局コメント", type:"text"},
+];
+igo.SGF_GAME_INFO_PROPERTIES = SGF_GAME_INFO_PROPERTIES;
+function getSGFGameInfoPropertyType(pid){
+    return SGF_GAME_INFO_PROPERTIES.find(pt=>pt.id==pid);
+}
+igo.getSGFGameInfoPropertyType = getSGFGameInfoPropertyType;
 
 })();
