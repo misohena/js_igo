@@ -168,10 +168,12 @@ class Board{
         const koPosOld = this.koPos;
         this.koPos = NPOS;
 
-        if(history){
-            history.pushPass(koPosOld);
-        }
+        const turnOld = this.turn;
         this.rotateTurn();
+
+        if(history){
+            history.pushPass(koPosOld, turnOld);
+        }
     }
 
     putStone(pos, color, history){
@@ -192,10 +194,12 @@ class Board{
         const koPosOld = this.koPos;
         this.koPos = this.getNewKoPosition(pos, color, removedStonesCount);
 
-        if(history){
-            history.push(pos, removedStonesArray, koPosOld, this.koPos);
-        }
+        const turnOld = this.turn;
         this.rotateTurn();
+
+        if(history){
+            history.pushPlace(pos, removedStonesArray, koPosOld, this.koPos, turnOld);
+        }
         return true;
     }
 
@@ -439,64 +443,328 @@ class Board{
 igo.Board = Board;
 
 
+
+//
+// BoardDiff
+//
+
+class BoardDiff{
+    constructor(turnChange, intersectionChanges){
+        this.turn = turnChange || null; //{oldTurn, newTurn}
+        this.intersections = intersectionChanges || null; //[{pos, oldState, newState}, ...] (sorted by pos)
+    }
+
+    addIntersectionChange(pos, oldState, newState){
+        const intersections = this.intersections || (this.intersections = []);
+        let index;//lower bound
+        for(index = 0; index < intersections.length && intersections[index].pos < pos; ++index);
+        if(index == intersections.length || pos < intersections[index].pos){
+            intersections.splice(index, 0, {pos, oldState, newState}); //new changes
+        }
+        else{
+            //pos == intersections[index].pos
+            if(intersections[index].oldState == newState){
+                intersections.splice(index, 1); //discard changes
+            }
+            else{
+                intersections[index].newState = newState; //merge changes
+            }
+        }
+    }
+    setTurnChange(oldTurn, newTurn){
+        this.turn = oldTurn != newTurn ? {oldTurn, newTurn} : null;
+    }
+
+    // diff
+
+    static diff(oldBoard, newBoard){
+        return new BoardDiff(
+            BoardDiff.diffTurn(oldBoard, newBoard),
+            BoardDiff.diffIntersections(oldBoard, newBoard));
+    }
+    static diffTurn(oldBoard, newBoard){
+        return oldBoard.turn != newBoard.turn ? {oldTurn:oldBoard.turn, newTurn:newBoard.turn} : null;
+    }
+    static diffIntersections(oldBoard, newBoard){
+        const newChanges = [];
+        for(let y = 0; y < newBoard.h; ++y){
+            for(let x = 0; x < newBoard.w; ++x){
+                const pos = newBoard.toPosition(x, y);
+                const oldState = (x < oldBoard.w && y < oldBoard.h) ? oldBoard.getAt(oldBoard.toPosition(x, y)) : EMPTY;
+                const newState = newBoard.getAt(pos);
+                if(oldState != newState){
+                    newChanges.push({pos, oldState, newState});
+                }
+            }
+        }
+        return newChanges;
+    }
+
+    // merge
+
+    static merge(oldChanges, newChanges){
+        if(!oldChanges){return newChanges;}
+        if(!newChanges){return oldChanges;}
+        return new BoardDiff(
+            BoardDiff.mergeTurn(oldChanges.turn, newChanges.turn),
+            BoardDiff.mergeIntersections(oldChanges.intersections, newChanges.intersections));
+    }
+    static mergeTurn(oldChange, newChange){
+        if(!oldChange){return newChange;}
+        if(!newChange){return oldChange;}
+        return oldChange.oldTurn != newChange.newTurn ? {oldTurn:oldChange.oldTurn, newTurn:newChange.newTurn} : null;
+    }
+    static mergeIntersections(oldChanges, newChanges){
+        if(!oldChanges){return newChanges;}
+        if(!newChanges){return oldChanges;}
+        const mergedChanges = [];
+        let oldIndex = 0;
+        let newIndex = 0;
+        while(oldIndex < oldChanges.length && newIndex < newChanges.length){
+            if(oldChanges[oldIndex].pos < newChanges[newIndex].pos){
+                mergedChanges.push(oldChanges[oldIndex]);
+                ++oldIndex;
+            }
+            else if(newChanges[newIndex].pos < oldChanges[oldIndex].pos){
+                mergedChanges.push(newChanges[newIndex]);
+                ++newIndex;
+            }
+            else{
+                if(oldChanges[oldIndex].oldState != newChanges[newIndex].newState){
+                    mergedChanges.push({
+                        pos: oldChanges[oldIndex].pos, //==new.pos
+                        oldState: oldChanges[oldIndex].oldState,
+                        newState: newChanges[newIndex].newState});
+                }
+                else{
+                    //discard change
+                }
+                ++oldIndex;
+                ++newIndex;
+            }
+        }
+        while(oldIndex < oldChanges.length){
+            mergedChanges.push(oldChanges[oldIndex++]);
+        }
+        while(newIndex < newChanges.length){
+            mergedChanges.push(newChanges[newIndex++]);
+        }
+        return mergedChanges;
+    }
+
+    // apply
+
+    applyTo(board){
+        BoardDiff.apply(board, this);
+    }
+
+    static apply(board, changes){
+        if(!changes){return;}
+        BoardDiff.applyTurn(board, changes.turn);
+        BoardDiff.applyIntersections(board, changes.intersections);
+    }
+    static applyTurn(board, change){
+        if(!change){return;}
+        const oldTurn = board.getTurn();
+        if(oldTurn != change.oldTurn){
+            // broken, update oldTurn
+            change.oldTurn = oldTurn;
+            ///@todo delete change if new oldTurn equals newTurn ?
+        }
+        board.setTurn(change.newTurn);
+    }
+    static applyIntersections(board, changes){
+        if(!changes){return;}
+        for(const intersection of changes){
+            const oldState = board.getAt(intersection.pos);
+            if(oldState != intersection.oldState){
+                // broken, update oldState
+                intersection.oldState = oldState;
+                ///@todo delete change if new oldState equals newState ?
+            }
+            board.setAt(intersection.pos, intersection.newState);
+        }
+    }
+
+    // apply inverse
+
+    applyInverseTo(board){
+        BoardDiff.applyInverse(board, this);
+    }
+    static applyInverse(board, changes){
+        if(!changes){return;}
+        BoardDiff.applyInverseTurn(board, changes.turn);
+        BoardDiff.applyInverseIntersections(board, changes.intersections);
+    }
+    static applyInverseTurn(board, change){
+        if(!change){return;}
+        board.setTurn(change.oldTurn);
+    }
+    static applyInverseIntersections(board, changes){
+        if(!changes){return;}
+        for(const intersection of changes){
+            board.setAt(intersection.pos, intersection.oldState);
+        }
+    }
+
+    // compress
+    // (for SGF compressed point lists)
+
+    getCompressedIntersectionChanges(board){
+        return BoardDiff.compressIntersections(this.intersections, board);
+    }
+
+    static compressIntersections(changes, board){
+        // changes = [{pos, oldState, newState}, ...]
+        // return [{state, left, top, right, bottom}, ...]
+
+        // 横方向に連続している同一交点状態(EMPTY,BLACK,WHITE)への変更をまとめる。
+        const intersections = new Array(board.getIntersectionCount());
+        for(const c of changes){
+            const x = board.toX(c.pos);
+            const y = board.toY(c.pos);
+            const left = board.leftOf(c.pos);
+            const leftIsect = left != NPOS ? intersections[left] : null;
+            if(leftIsect && leftIsect.state == c.newState){
+                leftIsect.right = x;
+                intersections[c.pos] = leftIsect;
+            }
+            else{
+                intersections[c.pos] = {state:c.newState, left:x, top:y, right:x, bottom:y};
+            }
+        }
+        // 縦方向に同じ状態、横幅のものをまとめる。
+        for(let y = 1; y < board.h; ++y){
+            for(let x = 0; x < board.w; ++x){
+                let pos = board.toPosition(x, y);
+                const currIsect = intersections[pos];
+                if(currIsect){
+                    const above = board.above(pos);
+                    const aboveIsect = intersections[above];
+                    if(aboveIsect &&
+                       aboveIsect.state == currIsect.state &&
+                       aboveIsect.left == currIsect.left &&
+                       aboveIsect.right == currIsect.right){
+                        aboveIsect.bottom = y;
+                        for(; x <= aboveIsect.right; ++x, pos = board.rightOf(pos)){
+                            intersections[pos] = aboveIsect;
+                        }
+                    }
+                }
+            }
+        }
+        // unique
+        const compressedChanges = [];
+        for(const isect of intersections){
+            if(isect){
+                if(compressedChanges.indexOf(isect) < 0){
+                    compressedChanges.push(isect);
+                }
+            }
+        }
+        return compressedChanges;
+    }
+}
+igo.BoardDiff = BoardDiff;
+
+    // compress
+
+
+
+//
+// BoardChanges
+//
+
+class BoardChanges {
+    static createUndoMove(color, pos, removedStones, koPosOld){
+        return new BoardChanges(
+            (color==WHITE ? removedStones : null),
+            (color==BLACK ? removedStones : null),
+            pos,
+            koPosOld,
+            color,
+            (color==WHITE && removedStones ? -removedStones.length : 0),
+            (color==BLACK && removedStones ? -removedStones.length : 0)
+        );
+    }
+    constructor(black, white, empty, koPos, turn, blackPrisoners, whitePrisoners){
+        this.black = black;
+        this.white = white;
+        this.empty = empty;
+        this.koPos = koPos;
+        this.turn = turn;
+        this.blackPrisoners = blackPrisoners;
+        this.whitePrisoners = whitePrisoners;
+    }
+    isEmpty(){
+        return (this.black === null || this.black === undefined || (this.black instanceof Array && this.black.length == 0)) &&
+            (this.white === null || this.white === undefined || (this.white instanceof Array && this.white.length == 0)) &&
+            (this.empty === null || this.empty === undefined || (this.empty instanceof Array && this.empty.length == 0)) &&
+            (this.koPos === null || this.koPos === undefined) &&
+            (this.turn === null || this.turn === undefined) &&
+            (typeof(this.blackPrisoners) != "number" || this.blackPrisoners == 0) &&
+            (typeof(this.whitePrisoners) != "number" || this.whitePrisoners == 0);
+    }
+    applyTo(board){
+        function setIntersections(positions, color){
+            if(typeof(positions) == "number" && board.isValidPosition(positions)){
+                board.setAt(positions, color);
+            }
+            else if(positions instanceof Array){
+                for(const pos of positions){
+                    if(typeof(pos) == "number" && board.isValidPosition(pos)){
+                        board.setAt(pos, color);
+                    }
+                }
+            }
+        }
+        setIntersections(this.black, BLACK);
+        setIntersections(this.white, WHITE);
+        setIntersections(this.empty, EMPTY);
+        if(typeof(this.koPos) == "number"){
+            board.setKoPos(this.koPos);
+        }
+        if(typeof(this.turn) == "number" && isValidColor(this.turn)){
+            board.setTurn(this.turn);
+        }
+        function addPrisoners(color, delta){
+            if(typeof(delta) == "number"){
+                if(delta < 0){
+                    board.removePrisoners(color, -delta);
+                }
+                else{
+                    board.addPrisoners(color, delta);
+                }
+            }
+        }
+        addPrisoners(BLACK, this.blackPrisoners);
+        addPrisoners(WHITE, this.whitePrisoners);
+    }
+}
+
+
 //
 // History
 //
 
-class HistoryUtil {
-    static undoBoard(move, board){
-        // move {pos, removedStones, koPosOld, koPosNew}
-        const oppositeColor = board.getTurn();
-        const color = getOppositeColor(oppositeColor);
-        if(board.isValidPosition(move.pos)){//exclude NPOS,POS_PASS,POS_RESIGN
-            board.removeStone(move.pos);
-        }
-        if(move.removedStones){
-            for(const pos of move.removedStones){
-                board.setAt(pos, oppositeColor);
-            }
-            board.removePrisoners(oppositeColor, move.removedStones.length);
-        }
-        board.setKoPos(move.koPosOld);
-        if(board.isValidPosition(move.pos) || move.pos == POS_PASS){
-            board.setTurn(color);
-        }
-    }
-    static redoBoard(move, board){
-        // move {pos, removedStones, koPosOld, koPosNew}
-        const color = board.getTurn();
-        const oppositeColor = getOppositeColor(color);
-        if(board.isValidPosition(move.pos)){//exclude NPOS,POS_PASS,POS_RESIGN
-            board.setAt(move.pos, color);
-        }
-        if(move.removedStones){
-            for(const pos of move.removedStones){
-                board.removeStone(pos);
-            }
-            board.addPrisoners(oppositeColor, move.removedStones.length);
-        }
-        board.setKoPos(move.koPosNew);
-        if(board.isValidPosition(move.pos) || move.pos == POS_PASS){
-            board.setTurn(oppositeColor);
-        }
-    }
-}
-
 class HistoryNode{
-    constructor(prev, pos, removedStones, koPosOld, koPosNew){
+    constructor(prev, pos, koPosNew, boardUndo){
+        // tree
         this.prev = prev;
         this.nexts = [];
-        this.pos = pos;
-        this.removedStones = removedStones;
-        this.koPosOld = koPosOld;
-        this.koPosNew = koPosNew;
         this.lastVisited = null; //?
-        // this.comment = <string>
-        // this.props = {<id>: {value:<value>, inherit:<boolean>}, ...}
-        // this.setup = {intersections: [{pos, oldState, newState},...] }
+        // move
+        this.pos = pos;
+        this.koPosNew = koPosNew;
+        // undo
+        this.boardUndo = boardUndo;
+        // properties
+        //this.comment = <string>
+        //this.props = {<id>: {value:<value>, inherit:<boolean>}, ...}
+        //this.setup = BoardDiff
     }
     shallowClone(){
-        const node = new HistoryNode(this.prev, this.pos, this.removedStones, this.koPosOld, this.koPosNew);
+        const node = new HistoryNode(this.prev, this.pos, this.koPosNew, this.boardUndo);
         node.nexts = this.nexts;
         node.lastVisited = this.lastVisited;
         if(this.comment !== undefined){node.comment = this.comment;}
@@ -504,16 +772,58 @@ class HistoryNode{
         if(this.setup !== undefined){node.setup = this.setup;}
         return node;
     }
+    isEmpty(){
+        return this.pos == NPOS &&
+            (this.boardUndo == null || this.boardUndo.isEmpty()) &&
+            this.comment === undefined &&
+            this.props === undefined && ///@todo check inside of this.props
+            this.setup === undefined &&
+            this.nexts.length <= 1;
+    }
+    removeThisNodeOnly(){ //remove this node only. add next nodes to previous node
+        if(this.isEmpty()){ //空でないときはこのノードの変更点を前後のノードにマージするか迷うので
+            const prev = this.prev;
+            if(prev){
+                const index = prev.nexts.indexOf(this);
+                if(index >= 0){
+                    prev.nexts.splice(index, 1, ...this.nexts);
+                }
+                if(prev.lastVisited == this){
+                    prev.lastVisited = this.nexts[0];
+                }
+            }
+            for(const next of this.nexts){
+                next.prev = prev;
+            }
+        }
+    }
+
     // Node Types
     isPass(){return this.pos == POS_PASS;}
     isResign(){return this.pos == POS_RESIGN;}
     isPlace(){return isIntersectionPosition(this.pos);}
     isMove(){return this.isPlace() || this.isPass();}
+    isSetup(){return this.pos == NPOS;} //not move, not resign (note: can has multiple siblings setup node)
+
+    isSecondConsecutivePass(){
+        if(!this.isPass()){
+            return false;
+        }
+        const move = this.getPreviousMove(); //skip setup nodes
+        return move && move.isPass();
+    }
 
     // Prev Node
     isRoot(){return !this.prev;}
     getRoot(){
         let node = this; while(node.prev){node = node.prev;}
+        return node;
+    }
+    getPreviousMove(){
+        let node = this.prev;
+        while(node && !node.isMove()){ //skip setup nodes
+            node = node.prev;
+        }
         return node;
     }
     getNumberOfSiblings(){
@@ -530,11 +840,11 @@ class HistoryNode{
     }
 
     // Next Nodes
-    findNext(pos){return this.nexts.find(node=>node.pos == pos);}
-    deleteNext(pos){
-        const index = this.nexts.findIndex(node=>node.pos == pos);
+
+    findNextByPos(pos){return this.nexts.find(node=>node.pos == pos);}
+    deleteNext(node){
+        const index = this.nexts.indexOf(node);
         if(index >= 0){
-            const node = this.nexts[index];
             this.nexts.splice(index, 1);
             // lastVisitedが指している手が削除されたときの対応
             if(this.lastVisited === node){
@@ -544,13 +854,12 @@ class HistoryNode{
             }
         }
     }
-    changeNextOrder(pos, delta){
-        const index = this.nexts.findIndex(move=>move.pos == pos);
+    changeNextOrder(node, delta){
+        const index = this.nexts.indexOf(node);
         if(index >= 0){
-            const move = this.nexts[index];
             this.nexts.splice(index, 1);
             const newIndex = Math.min(Math.max(index + delta, 0), this.nexts.length);
-            this.nexts.splice(newIndex, 0, move);
+            this.nexts.splice(newIndex, 0, node);
         }
     }
 
@@ -686,50 +995,31 @@ class HistoryNode{
     getComment(){return this.comment;}
     setComment(str){this.comment = str;}
     removeComment(str){delete this.comment;}
-    // Setup
+
+    // Setup property (Board change)
     hasSetup(){return !!this.setup;}
     getSetup(){return this.setup;}
-    acquireSetup(){
-        if(!this.setup){
-            this.setup = {intersections:[]}; //[{pos, oldState, newState},...]
-        }
-        return this.setup;
-    }
-    setSetup(intersections){
+    setSetup(boardChanges){ //set BoardDiff object
         // do not recycle current this.setup object.
         // see shallowClone() usage in toSGF()
-        this.setup = {intersections};
+        this.setup = boardChanges;
     }
-    addIntersectionChange(pos, oldState, newState){
-        const intersections = this.acquireSetup().intersections;
-        let index;//lower bound
-        for(index = 0; index < intersections.length && intersections[index].pos < pos; ++index);
-        if(index == intersections.length || pos < intersections[index].pos){
-            intersections.splice(index, 0, {pos, oldState, newState}); //new change
-        }
-        else{
-            //pos == intersections[index].pos
-            if(intersections[index].oldState == newState){
-                intersections.splice(index, 1); //discard change
-            }
-            else{
-                intersections[index].newState = newState; //merge changes
-            }
-        }
+    removeSetup(){delete this.setup;}
+    acquireSetup(){
+        return this.setup || (this.setup = new BoardDiff());
     }
 }
 
 class HistoryTree{
     constructor(){
         this.moveNumber = 0;
-        this.pointer = this.first = new HistoryNode(null, NPOS, null, NPOS, NPOS);
+        this.pointer = this.first = new HistoryNode(null, NPOS, NPOS, null); //root node
     }
     getCurrentNode(){return this.pointer;}
     getNextNodes(){return this.pointer ? this.pointer.nexts : [];}
     getPreviousNode(){return this.pointer.prev;}
-    getFirstNodes(){return this.first.nexts;}
     getRootNode(){return this.first;}
-    findNextNode(pos){return this.pointer ?this.pointer.findNext(pos) : null;}
+    findNextNodeByPos(pos){return this.pointer.findNextByPos(pos);}
 
     setCommentToCurrentNode(text){
         this.pointer.setComment(text);
@@ -756,27 +1046,48 @@ class HistoryTree{
 
     // Move
 
-    pushPass(koPosOld){
-        this.push(POS_PASS, null, koPosOld, NPOS);
+    pushPass(koPosOld, turnOld){
+        this._pushMoveOrResign(POS_PASS, NPOS, new BoardChanges(null, null, null, koPosOld, turnOld));
     }
-    pushResign(koPos){
-        this.push(POS_RESIGN, null, koPos, koPos); //keep koPos, do not rotate a turn
+    pushResign(koPos, turnOld){
+        this._pushMoveOrResign(POS_RESIGN, koPos, null); //keep koPos, do not rotate a turn
     }
-    push(pos, removedStones, koPosOld, koPosNew){
-        const moveSamePos = this.pointer.findNext(pos);
-        if(moveSamePos){
-            this.pointer.lastVisited = moveSamePos;
-            this.pointer = moveSamePos;
+    pushPlace(pos, removedStones, koPosOld, koPosNew, turnOld){
+        this._pushMoveOrResign(pos, koPosNew, BoardChanges.createUndoMove(turnOld, pos, removedStones, koPosOld));
+    }
+    pushPlaceIllegal(pos, koPosOld, turnOld){
+        this._pushMoveOrResign(pos, NPOS, new BoardChanges(null, null, null, koPosOld, turnOld));
+    }
+    _pushMoveOrResign(pos, koPosNew, boardUndo){
+        // exclude NPOS (setup node)
+        // node can have multiple setup nodes
+        if(pos == NPOS){
+            return; // use pushSetupNode()
+        }
+        const nodeSamePos = this.pointer.findNextByPos(pos);
+        if(nodeSamePos){ //place, pass, resign
+            // update UNDO data
+            nodeSamePos.boardUndo = boardUndo;
+            // select nodeSamePos
+            this.pointer.lastVisited = nodeSamePos;
+            this.pointer = nodeSamePos;
         }
         else{
-            const newMove = new HistoryNode(this.pointer, pos, removedStones, koPosOld, koPosNew);
-            this.pointer.nexts.push(newMove);
-            this.pointer.lastVisited = newMove;
-            this.pointer = newMove;
+            this._pushNewNode(pos, koPosNew, boardUndo);
         }
         if(isIntersectionPosition(pos) || pos == POS_PASS){ //exclude NPOS, POS_RESIGN
             ++this.moveNumber;
         }
+    }
+    pushSetupNode(koPosOld, koPosNew, turnOld){
+        return this._pushNewNode(NPOS, koPosNew, new BoardChanges(null, null, null, koPosOld, turnOld));
+    }
+    _pushNewNode(pos, koPosNew, boardUndo){
+        const newNode = new HistoryNode(this.pointer, pos, koPosNew, boardUndo);
+        this.pointer.nexts.push(newNode);
+        this.pointer.lastVisited = newNode;
+        this.pointer = newNode;
+        return newNode;
     }
 
     // Undo/Redo
@@ -785,19 +1096,25 @@ class HistoryTree{
         if( ! this.pointer.prev){
             return false;
         }
-        const move = this.pointer;
+        const node = this.pointer;
 
         // undo Game state
-        if(move.pos == POS_RESIGN){
+        if(node.pos == POS_RESIGN){
             game.cancelFinish();
         }
-        else if(this.pointer.pos == POS_PASS && this.pointer.prev.pos == POS_PASS){
+        else if(this.pointer.isSecondConsecutivePass()){
             game.cancelFinish();
+        }
+        // undo setup
+        if(node.setup){
+            node.setup.applyInverseTo(board);
         }
         // undo board
-        HistoryUtil.undoBoard(move, board);
+        if(node.boardUndo){
+            node.boardUndo.applyTo(board);
+        }
         // undo move number
-        if(isIntersectionPosition(move.pos) || move.pos == POS_PASS){ //exclude NPOS, POS_RESIGN
+        if(isIntersectionPosition(node.pos) || node.pos == POS_PASS){ //exclude NPOS, POS_RESIGN
             --this.moveNumber;
         }
         this.pointer = this.pointer.prev;
@@ -807,21 +1124,47 @@ class HistoryTree{
         if( ! this.pointer.lastVisited){
             return false;
         }
-        const move = this.pointer.lastVisited;
+        const node = this.pointer.lastVisited;
+
+        // redo Board state
+        if(isIntersectionPosition(node.pos)){
+            // 実際に打って再現する。実際に打つことで
+            // - 現在の盤面で合法であることを確認する。
+            // - 現在の盤面における取石やコウ状態でUNDO情報を更新する。
+            if( ! board.putStone(node.pos, board.getTurn(), this)){
+                // 以前置けた手が置けなくなっている
+                // (前の盤面がフリー編集などによって変わった)。
+                // 石は置かずにコウと手番だけ進める。
+                // 不正な手としてノードを更新し、
+                // undo時に間違った戻しをしないようにする。
+                const koPosOld = board.koPos;
+                board.setKoPos(NPOS);
+                const turnOld = board.getTurn();
+                board.rotateTurn();
+                this.pushPlaceIllegal(node.pos, koPosOld, turnOld);
+            }
+        }
+        else if(node.pos == POS_PASS){
+            board.pass(this);
+        }
+        else{
+            // POS_RESIGN, NPOS
+            this.pointer = this.pointer.lastVisited;
+            // do not change koPos, turn, moveNumber
+        }
+
+        // redo setup
+        if(node.setup){
+            node.setup.applyTo(board);
+        }
+
         // redo Game state
-        if(move.pos == POS_RESIGN){
+        if(node.pos == POS_RESIGN){
             game.setFinished(getOppositeColor(board.getTurn()));
         }
-        else if(this.pointer.pos == POS_PASS && this.pointer.lastVisited.pos == POS_PASS){
+        else if(this.pointer.isSecondConsecutivePass()){
             game.setFinished(EMPTY); ///@todo 勝敗判定！
         }
-        // redo board
-        HistoryUtil.redoBoard(move, board);
-        // redo move number
-        if(isIntersectionPosition(move.pos) || move.pos == POS_PASS){ //exclude NPOS, POS_RESIGN
-            ++this.moveNumber;
-        }
-        this.pointer = this.pointer.lastVisited;
         return true;
     }
     redoTo(descendant, board, game){
@@ -855,8 +1198,8 @@ class HistoryTree{
 
     // Tree Operations
 
-    deleteBranch(pos){
-        this.pointer.deleteNext(pos);
+    deleteBranch(node){
+        this.pointer.deleteNext(node);
     }
     changeBranchOrder(pos, delta){
         this.pointer.changeNextOrder(pos, delta);
@@ -865,109 +1208,7 @@ class HistoryTree{
 igo.HistoryTree = HistoryTree;
 
 
-function enumerateBoardChanges(oldBoard, newBoard){ //diffBoard
-    const newChanges = [];
-    for(let y = 0; y < newBoard.h; ++y){
-        for(let x = 0; x < newBoard.w; ++x){
-            const pos = newBoard.toPosition(x, y);
-            const oldState = (x < oldBoard.w && y < oldBoard.h) ? oldBoard.getAt(oldBoard.toPosition(x, y)) : EMPTY;
-            const newState = newBoard.getAt(pos);
-            if(oldState != newState){
-                newChanges.push({pos, oldState, newState});
-            }
-        }
-    }
-    return newChanges;
-}
-igo.enumerateBoardChanges = enumerateBoardChanges;
 
-function mergeBoardChanges(oldChanges, newChanges){
-    const mergedChanges = [];
-    let oldIndex = 0;
-    let newIndex = 0;
-    while(oldIndex < oldChanges.length && newIndex < newChanges.length){
-        if(oldChanges[oldIndex].pos < newChanges[newIndex].pos){
-            mergedChanges.push(oldChanges[oldIndex]);
-            ++oldIndex;
-        }
-        else if(newChanges[newIndex].pos < oldChanges[oldIndex].pos){
-            mergedChanges.push(newChanges[newIndex]);
-            ++newIndex;
-        }
-        else{
-            if(oldChanges[oldIndex].oldState != newChanges[newIndex].newState){
-                mergedChanges.push({
-                    pos: oldChanges[oldIndex].pos, //==new.pos
-                    oldState: oldChanges[oldIndex].oldState,
-                    newState: newChanges[newIndex].newState});
-            }
-            else{
-                //discard change
-            }
-            ++oldIndex;
-            ++newIndex;
-        }
-    }
-    while(oldIndex < oldChanges.length){
-        mergedChanges.push(oldChanges[oldIndex++]);
-    }
-    while(newIndex < newChanges.length){
-        mergedChanges.push(newChanges[newIndex++]);
-    }
-    return mergedChanges;
-}
-igo.mergeBoardChanges = mergeBoardChanges;
-
-function compressBoardChanges(changes, board){
-    // changes = [{pos, oldState, newState}, ...]
-    // return [{state, left, top, right, bottom}, ...]
-
-    // 横方向に連続している同一交点状態(EMPTY,BLACK,WHITE)への変更をまとめる。
-    const intersections = new Array(board.getIntersectionCount());
-    for(const c of changes){
-        const x = board.toX(c.pos);
-        const y = board.toY(c.pos);
-        const left = board.leftOf(c.pos);
-        const leftIsect = left != NPOS ? intersections[left] : null;
-        if(leftIsect && leftIsect.state == c.newState){
-            leftIsect.right = x;
-            intersections[c.pos] = leftIsect;
-        }
-        else{
-            intersections[c.pos] = {state:c.newState, left:x, top:y, right:x, bottom:y};
-        }
-    }
-    // 縦方向に同じ状態、横幅のものをまとめる。
-    for(let y = 1; y < board.h; ++y){
-        for(let x = 0; x < board.w; ++x){
-            let pos = board.toPosition(x, y);
-            const currIsect = intersections[pos];
-            if(currIsect){
-                const above = board.above(pos);
-                const aboveIsect = intersections[above];
-                if(aboveIsect &&
-                   aboveIsect.state == currIsect.state &&
-                   aboveIsect.left == currIsect.left &&
-                   aboveIsect.right == currIsect.right){
-                    aboveIsect.bottom = y;
-                    for(; x <= aboveIsect.right; ++x, pos = board.rightOf(pos)){
-                        intersections[pos] = aboveIsect;
-                    }
-                }
-            }
-        }
-    }
-    // unique
-    const compressedChanges = [];
-    for(const isect of intersections){
-        if(isect){
-            if(compressedChanges.indexOf(isect) < 0){
-                compressedChanges.push(isect);
-            }
-        }
-    }
-    return compressedChanges;
-}
 
 //
 // Game Model
@@ -980,7 +1221,6 @@ class Game{
         this.board = new Board(w, h);
 //        this.history = new History();
         this.history = new HistoryTree();
-        this.firstTurn = BLACK;
     }
 
     // Finished & Winner
@@ -999,36 +1239,12 @@ class Game{
     // Board
     getTurn(){return this.board.getTurn();}
     getPrisoners(color){return this.board.getPrisoners(color);}
-    setFirstTurn(color){
-        if(this.getMoveNumber() > 0){
-            return false; //途中で変えるのは不正
-        }
-        if(!isValidColor(color)){
-            return false;
-        }
-        this.firstTurn = color;
-        this.board.setTurn(color);
-        return true;
-    }
-    getFirstTurn(){
-        return this.firstTurn;
-    }
-    setIntersectionStateForced(pos, state){
-        if(this.getMoveNumber() > 0){
-            return false; //途中で変えるのは不正
-        }
-        if(this.board.isValidPosition(pos)){
-            this.board.setAt(pos, state);
-        }
-        return true;
-    }
 
     pass(){
         if( ! this.finished){
-            const prevMoveIsPass = this.history.getCurrentNode().pos == POS_PASS;
             this.board.pass(this.history);
 
-            if(prevMoveIsPass){
+            if(this.history.getCurrentNode().isSecondConsecutivePass()){
                 this.setFinished(EMPTY); ///@todo 勝敗の判定！
             }
         }
@@ -1044,8 +1260,24 @@ class Game{
     resign(){
         if( ! this.finished){
             this.setFinished(getOppositeColor(this.getTurn()));
-            this.history.pushResign(this.board.koPos); //keep koPos, do not rotate a turn
+            this.history.pushResign(this.board.koPos, this.getTurn()); //keep koPos, do not rotate a turn
         }
+    }
+
+    // Foeced Change (for setup properties)
+
+    setTurnForced(color){
+        if(!isValidColor(color)){
+            return false;
+        }
+        this.board.setTurn(color);
+        return true;
+    }
+    setIntersectionStateForced(pos, state){
+        if(this.board.isValidPosition(pos)){
+            this.board.setAt(pos, state);
+        }
+        return true;
     }
 
     // History
@@ -1096,31 +1328,25 @@ class Game{
 
         // determine start node
         let startNode;
-        let firstTurn;
         if(fromCurrentNode){
             // make setup property
             const emptyBoard = new Board(board.w, board.h);
-            const intersectionChanges = enumerateBoardChanges(emptyBoard, board);
+            const boardChanges = BoardDiff.diff(emptyBoard, board);
             // clone current node
             startNode = this.history.getCurrentNode().shallowClone();
             startNode.prev = null;
             startNode.pos = NPOS;
-            startNode.removedStones = null;
-            startNode.koPosOld = NPOS;
-            startNode.setSetup(intersectionChanges); //setSetupはclone元の状態を変更しない、はず。
-            // first turn
-            firstTurn = this.getTurn();
+            startNode.boardUndo = null;
+            startNode.setSetup(boardChanges); //setSetupはclone元の状態を変更しない、はず。
         }
         else{
             startNode = this.history.getRootNode();
-            firstTurn = this.firstTurn;
         }
 
         // Root Node
         let rootProperties =
             "GM[1]" +
-            "SZ[" + (board.w == board.h ? board.w : board.w + ":" + board.h) + "]" +
-            (firstTurn == WHITE ? "PL[W]" : ""); ///@todo PLはsetupプロパティとして扱う
+            "SZ[" + (board.w == board.h ? board.w : board.w + ":" + board.h) + "]";
 
         // Game Info Properties (game-infoはRoot Nodeにしかない)
         const rootNode = this.history.getRootNode();
@@ -1138,8 +1364,7 @@ class Game{
 
         //
         let str = "";
-        let moveNumber = 0;
-        let turn = firstTurn;
+        let turn = BLACK;
 
         startNode.visitAllNodes(
             (node)=>{ //enter
@@ -1160,19 +1385,22 @@ class Game{
                         "[" +
                         (node.isPass() ? "" : toSGFPoint(node.pos)) +
                         "]";
-                    ++moveNumber;
                     turn = getOppositeColor(turn);
                 }
                 if(node.hasSetup()){
                     const setup = node.getSetup();
                     if(setup && setup.intersections){
-                        for(const change of compressBoardChanges(setup.intersections, board)){
+                        for(const change of setup.getCompressedIntersectionChanges(board)){
                             // AB, AW, AE
                             str += "A" + toSGFColor(change.state) + "[" +
                                 toSGFPointXY(change.left, change.top) +
                                 (change.left != change.right || change.top != change.bottom ?
                                  ":" + toSGFPointXY(change.right, change.bottom) : "") + "]";
                         }
+                    }
+                    if(setup && setup.turn && setup.turn.newTurn != turn){
+                        str += "PL[" + toSGFColor(setup.turn.newTurn) + "]";
+                        turn = setup.turn.newTurn;
                     }
                 }
                 if(node.hasProperty("marks")){
@@ -1206,8 +1434,12 @@ class Game{
                 if(node.getNumberOfSiblings() > 1){
                     str += ")";
                 }
-                --moveNumber;
-                turn = getOppositeColor(turn);
+                if(node.setup && node.setup.turn){
+                    turn = node.setup.turn.oldTurn;
+                }
+                else{
+                    turn = getOppositeColor(turn);
+                }
             });
         return "(" + str + ")";
     }
@@ -1254,6 +1486,7 @@ class Game{
                 const nodeProps = tree.nodes[ni];
                 // process node
                 let moved = false;
+                let setup = false;
                 for(const prop of nodeProps){
                     const pid = prop.propIdent;
                     const pvalues = prop.propValues;
@@ -1265,13 +1498,19 @@ class Game{
                             if(moved){
                                 throw new Error("Moved twice in a node");
                             }
+                            if(setup){
+                                throw new Error("Cannot mix move properties and setup properties");
+                            }
                             moved = true;
                             const move = pvalues[0];
                             const color = pid == "B" ? BLACK : WHITE;
                             if(game.getTurn() != color){
-                                if( ! game.setFirstTurn(color)){ //first move only
+                                // 詰碁のSGFでPLなしにWから始まるものがあるので初手だけは許可する。
+                                if( game.getMoveNumber() > 0){
                                     throw new Error("Unexpected player change " + pid + " " + move);
                                 }
+                                game.history.getCurrentNode().acquireSetup().setTurnChange(game.getTurn(), color); //着手前なのでおそらくルートノード
+                                game.setTurnForced(color);
                             }
                             const pos = parseSGFMove(move, w, h);
                             if(pos == POS_PASS){
@@ -1288,27 +1527,42 @@ class Game{
                     case "AB":
                     case "AW":
                     case "AE":
-                        for(const value of pvalues){
-                            const points = parseSGFComposedPoint(value, w, h);
-                            for(const pos of points){
-                                if(isValidPosition(pos, w, h)){
-                                    const oldState = game.board.getAt(pos);
-                                    const newState = pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY;
-                                    game.history.getCurrentNode().addIntersectionChange(pos, oldState, newState);
-                                    game.setIntersectionStateForced(pos, newState);
+                    case "PL":
+                        if(moved){
+                            throw new Error("Cannot mix setup properties and move properties");
+                        }
+                        // prepare setup property(BoardDiff)
+                        if(!setup){
+                            // add node
+                            if(!game.history.getCurrentNode().isSetup()){
+                                game.history.pushSetupNode(game.board.koPos, game.board.koPos, game.board.getTurn()); ///@todo keep koPos? or not?
+                            }
+                            // add setup property
+                            setup = game.history.getCurrentNode().acquireSetup();
+                        }
+                        if(pid == "AB" || pid == "AW" || pid == "AE"){
+                            //change intersection
+                            for(const value of pvalues){
+                                const points = parseSGFComposedPoint(value, w, h);
+                                for(const pos of points){
+                                    if(isValidPosition(pos, w, h)){
+                                        const oldState = game.board.getAt(pos);
+                                        const newState = pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY;
+                                        setup.addIntersectionChange(pos, oldState, newState);
+                                        game.setIntersectionStateForced(pos, newState);
+                                    }
                                 }
                             }
                         }
-                        break;
-                    case "PL":
-                        {
-                            const color = pvalues[0] == "B" ? BLACK : pvalues[0] == "W" ? WHITE : EMPTY;
-                            if(color == EMPTY){
+                        else if(pid == "PL"){
+                            //change turn
+                            const newTurn = pvalues[0] == "B" ? BLACK : pvalues[0] == "W" ? WHITE : EMPTY;
+                            if(newTurn == EMPTY){
                                 throw new Error("Invalid color " + pid + " " + pvalues[0]);
                             }
-                            if( ! game.setFirstTurn(color)){ //first move only
-                                throw new Error("Unexpected player change by PL");
-                            }
+                            const oldTurn = game.getTurn();
+                            setup.setTurnChange(oldTurn, newTurn);
+                            game.setTurnForced(newTurn);
                         }
                         break;
                     // Node Annotation Properties

@@ -11,8 +11,7 @@ const POS_PASS = igo.POS_PASS;
 const POS_RESIGN = igo.POS_RESIGN;
 const Game = igo.Game;
 const getOppositeColor = igo.getOppositeColor;
-const enumerateBoardChanges = igo.enumerateBoardChanges;
-const mergeBoardChanges = igo.mergeBoardChanges;
+const BoardDiff = igo.BoardDiff;
 
 function clamp(x, xmin, xmax){
     return x < xmin ? xmin : x > xmax ? xmax : x;
@@ -909,6 +908,7 @@ class GameView{
         this.mode = mode;
         this.mode.start();
         this.onBarHeightChanged();
+        this.update();
     }
     endMode(){
         if(this.mode){
@@ -1100,7 +1100,7 @@ class GameView{
             this.cancelAutoMove();
         }
         if(!this.editable){
-            if(!this.model.history.findNextNode(pos)){
+            if(!this.model.history.findNextNodeByPos(pos)){
                 return; // same move only if not editable
             }
         }
@@ -1550,65 +1550,72 @@ class GameView{
         const fill = this.model.getTurn() == BLACK ? "#444" : "#eee";
 
         const nexts = this.model.history.getNextNodes();
+        let countOutOfBoard = 0;
         for(let i = 0; i < nexts.length; ++i){
-            const move = nexts[i];
-            const text =
-                  move.pos == NPOS ? "無着手" :
-                  move.pos == POS_PASS ? "パス" :
-                  move.pos == POS_RESIGN ? "投了" :
-                  nexts.length == 1 ? "×" :
-                  String.fromCharCode("A".charCodeAt() + i);
-            const x =
-                  move.pos == NPOS ? this.w-5 :
-                  move.pos == POS_PASS ? this.w-3 :
-                  move.pos == POS_RESIGN ? this.w-1 :
-                  this.toBoardElementX(move.pos);
-            const y =
-                  move.pos == NPOS ? this.h :
-                  move.pos == POS_PASS ? this.h :
-                  move.pos == POS_RESIGN ? this.h :
-                  this.toBoardElementY(move.pos);
-            const branchElem = this.boardElement.createOverlayText(
-                x, y, text, fill,
-                e=>this.onBranchTextClick(move.pos, e),
-                false);
-            this.branchTextElements.push(branchElem);
+            const node = nexts[i];
+            if(node.isPlace()){
+                const text =
+                      nexts.length == 1 ? "×" :
+                      String.fromCharCode("A".charCodeAt() + i);
+                const x = this.toBoardElementX(node.pos);
+                const y = this.toBoardElementY(node.pos);
+                const branchElem = this.boardElement.createOverlayText(
+                    x, y, text, fill,
+                    e=>this.onBranchTextClick(node, e),
+                    false);
+                this.branchTextElements.push(branchElem);
+            }
+            else{
+                const x = 1.5 * countOutOfBoard;
+                const y = this.h;
+                const text = String.fromCharCode("A".charCodeAt() + i) +
+                      (node.pos == POS_PASS ? "パス" :
+                       node.pos == POS_RESIGN ? "投了" :
+                       node.pos == NPOS ? "盤面" : "不明");
+                const branchElem = this.boardElement.createOverlayText(
+                    x, y, text, fill,
+                    e=>this.onBranchTextClick(node, e),
+                    false);
+                this.branchTextElements.push(branchElem);
+                ++countOutOfBoard;
+            }
         }
     }
 
-    onBranchTextClick(pos, e){
+    onBranchTextClick(node, e){
         if(!this.editable){
             return;
         }
         e.stopPropagation();
         createPopupMenu(e.clientX, e.clientY, [
             {text:"ここに打つ", handler:()=>{
-                if(pos == NPOS){
-                    ///@todo
+                if(node.pos == NPOS){
+                    this.model.redoTo(node);
+                    this.update();
                 }
-                else if(pos == POS_PASS){
+                else if(node.pos == POS_PASS){
                     this.pass();
                 }
-                else if(pos == POS_RESIGN){
+                else if(node.pos == POS_RESIGN){
                     this.resign();
                 }
                 else{
-                    this.putStone(pos);
+                    this.putStone(node.pos);
                 }
             }},
-            {text:"分岐を削除", handler:()=>this.deleteBranch(pos)},
-            {text:"分岐の順番を前にする", handler:()=>this.changeBranchOrder(pos, -1)},
-            {text:"分岐の順番を後にする", handler:()=>this.changeBranchOrder(pos, 1)},
+            {text:"分岐を削除", handler:()=>this.deleteBranch(node)},
+            {text:"分岐の順番を前にする", handler:()=>this.changeBranchOrder(node, -1)},
+            {text:"分岐の順番を後にする", handler:()=>this.changeBranchOrder(node, 1)},
         ]);
         return;
     }
 
-    deleteBranch(pos){
-        this.model.history.deleteBranch(pos);
+    deleteBranch(node){
+        this.model.history.deleteBranch(node);
         this.updateBranchTexts();
     }
-    changeBranchOrder(pos, delta){
-        this.model.history.changeBranchOrder(pos, delta);
+    changeBranchOrder(node, delta){
+        this.model.history.changeBranchOrder(node, delta);
         this.updateBranchTexts();
     }
 
@@ -1901,10 +1908,10 @@ class GameView{
     // Free Edit Mode
     //
     startFreeEditMode(){
-        if(this.model.getMoveNumber() != 0){
-            alert("フリー編集モードは最初の盤面でのみ使用出来ます。");
-            return;
-        }
+        //if(this.model.getMoveNumber() != 0){
+        //    alert("フリー編集モードは最初の盤面でのみ使用出来ます。");
+        //    return;
+        //}
 
         const gameView = this;
         class FreeEditMode{
@@ -1921,7 +1928,8 @@ class GameView{
                     this.alternately = false;
                     gameView.hideMoveModeUI();
                     gameView.boardElement.setStonePointerEventsEnabled(false); //石が盤面上のmouse/touchイベントを邪魔しないようにする
-                    this.oldBoard = gameView.model.board.clone(); //開始時点の盤面
+                    //開始時点の盤面、手番
+                    this.oldBoard = gameView.model.board.clone();
                 }
             }
             end(){
@@ -1933,11 +1941,33 @@ class GameView{
                     gameView.boardElement.setStonePointerEventsEnabled(true);
 
                     // update setup property
-                    const newChanges = enumerateBoardChanges(this.oldBoard, gameView.model.board); //diffBoard
-                    const currNode = gameView.model.history.getCurrentNode();
+                    let boardChanges = BoardDiff.diff(this.oldBoard, gameView.model.board);
+
+                    let currNode = gameView.model.history.getCurrentNode();
                     const oldSetup = currNode.getSetup();
-                    const mergedChanges = (oldSetup && oldSetup.intersections) ? mergeBoardChanges(oldSetup.intersections, newChanges) : newChanges;
-                    currNode.setSetup(mergedChanges);
+                    if(oldSetup){
+                        // merge changes
+                        boardChanges = BoardDiff.merge(oldSetup, boardChanges);
+                    }
+
+                    if((!boardChanges.intersections || boardChanges.intersections.length == 0) && (!boardChanges.turn || boardChanges.turn.oldTurn == boardChanges.turn.newTurn)){
+                        if(oldSetup){
+                            currNode.removeSetup();
+                            if(currNode.isEmpty() && !currNode.isRoot()){
+                                gameView.model.undo();
+                                currNode.removeThisNodeOnly();
+                                alert("Setup用のノードを削除しました。");
+                            }
+                        }
+                    }
+                    else{
+                        if( ! currNode.isSetup()){
+                            currNode = gameView.model.history.pushSetupNode(gameView.model.board.koPos);
+                            alert("Setup用のノードを追加しました。");
+                        }
+                        currNode.setSetup(boardChanges);
+                    }
+                    gameView.update();
                 }
             }
 
@@ -1966,8 +1996,8 @@ class GameView{
                             }
                         }),
                     createButton("終了", ()=>{gameView.popMode();}),
-                    createCheckbox("白先", gameView.model.getFirstTurn() == WHITE, (e)=>{
-                        gameView.model.setFirstTurn(e.target.checked ? WHITE : BLACK);
+                    createCheckbox("白番", gameView.model.getTurn() == WHITE, (e)=>{
+                        gameView.model.setTurnForced(e.target.checked ? WHITE : BLACK);
                     })
                 ], gameView.bottomBar);
             }
