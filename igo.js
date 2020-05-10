@@ -580,6 +580,14 @@ class HistoryNode{
         }
         return node.isDescendantOf(this);
     }
+    findNextFork(){
+        for(let node = this; node.nexts.length > 0; node = node.nexts[0]){
+            if(node.nexts.length > 1){
+                return node;
+            }
+        }
+        return null;
+    }
     findDepthFirst(pred){
         if(pred(this)){
             return this;
@@ -620,12 +628,23 @@ class HistoryNode{
                     --q;
                 }
             }
-            // SGF point string : find point breadth-first
-            else if(typeof(q) == "string"){ //coordinate
-                const pos = igo.parseSGFMove(q, board.w, board.h); ///@todo not supported !isMove() (ex:resign, setup node)
-                const target = curr.findBreadthFirst(node=>node.pos==pos);
-                if(target){
-                    curr = target;
+            // SGF point string
+            else if(typeof(q) == "string"){
+                // AA : find point breadth-first
+                if(/^[a-zA-Z][a-zA-Z]$/.test(q)){
+                    const pos = igo.parseSGFMove(q, board.w, board.h); // not supported !isMove() (ex:resign, setup node)
+                    const target = curr.findBreadthFirst(node=>node.pos==pos);
+                    if(target){
+                        curr = target;
+                    }
+                }
+                // A : find next fork
+                else if(/^[A-Z]$/.test(q)){
+                    const index = q.charCodeAt(0) - 0x41;
+                    const nextFork = curr.findNextFork();
+                    if(nextFork && index < nextFork.nexts.length){
+                        curr = nextFork.nexts[index];
+                    }
                 }
             }
         }
