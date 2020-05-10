@@ -28,7 +28,10 @@
   <body>
 
     <script>
-    new igo.GameView(document.currentScript);
+    var gameView = new igo.GameView(
+        document.currentScript,
+        igo.createGameFromQuery()
+    );
     </script>
   </body>
 </html>

@@ -96,6 +96,15 @@ class Board{
     removeStone(pos)
         {this.setAt(pos, EMPTY);}
 
+    setAll(array){
+        if(array){
+            const size = Math.min(array.length, this.getIntersectionCount());
+            for(let pos = 0; pos < size; ++pos){
+                this.setAt(pos, array[pos] & 3);
+            }
+        }
+    }
+
     hookSetAt(func){
         if(typeof(func) == "function"){
             this.setAt = (pos, state)=>{
@@ -1302,17 +1311,6 @@ class Game{
 
     toSGF(fromCurrentNode){
         const board = this.board;
-        function toPointLetter(n){
-            if(!(n >= 0 && n <= 51)){
-                throw new Error("SGF coordinates out of range : " + n);
-            }
-            // 0~25:a~z(0x61~)
-            //26~51:A~Z(0x41~)
-            return String.fromCharCode(n<26 ? 0x61+n : 0x41-26+n);
-        }
-        function toSGFPointXY(x, y){
-            return toPointLetter(x) + toPointLetter(y);
-        }
         function toSGFPoint(pos){
             return toSGFPointXY(board.toX(pos), board.toY(pos));
         }
@@ -1833,12 +1831,31 @@ function parseSGFPointXY(value, w, h){
     }
     return {x, y};
 }
+igo.parseSGFPointXY = parseSGFPointXY;
 function parseSGFText(value){
     return value.replace(/\\(\n\r?|\r\n?)/gi, "").replace(/\\(.)/gi, "$1").replace(/\t\v/gi, " ");
 }
 function parseSGFSimpleText(value){
     return value.replace(/\\(\n\r?|\r\n?)/gi, "").replace(/\\(.)/gi, "$1").replace(/(\t|\v|\n\r?|\r\n?)/gi, " ");
 }
+
+
+// stringize
+
+function toSGFPointLetter(n){
+    if(!(n >= 0 && n <= 51)){
+        throw new Error("SGF coordinates out of range : " + n);
+    }
+    // 0~25:a~z(0x61~)
+    //26~51:A~Z(0x41~)
+    return String.fromCharCode(n<26 ? 0x61+n : 0x41-26+n);
+}
+function toSGFPointXY(x, y){
+    return toSGFPointLetter(x) + toSGFPointLetter(y);
+}
+igo.toSGFPointXY = toSGFPointXY;
+
+// SGF propertis
 
 const SGF_GAME_INFO_PROPERTIES = [
     {id:"CP", desc:"著作権者情報"},
@@ -1870,5 +1887,158 @@ function getSGFGameInfoPropertyType(pid){
     return SGF_GAME_INFO_PROPERTIES.find(pt=>pt.id==pid);
 }
 igo.getSGFGameInfoPropertyType = getSGFGameInfoPropertyType;
+
+
+
+//
+// Stringify
+//
+
+function btoaSafe(b){
+    return btoa(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "."); //url safe base64
+}
+function atobSafe(a){
+    return atob(a.replace(/-/g, "+").replace(/_/g, "/").replace(/\./g, "="));
+}
+
+// 盤面の交点を文字列へ変換し、または文字列から戻すためのクラスです。
+class BoardStringizer{
+    static to20Per32bits(board){
+        // 3^20 = 0xcfd41b91
+        const size = board.getIntersectionCount();
+        let str = "";
+        for(let pos = 0; pos < size; pos += 20){
+            let dw = 0;
+            for(let i = Math.min(20, size-pos)-1; i >= 0; --i){
+                dw = dw * 3 + board.getAt(pos+i);
+            }
+            str += String.fromCharCode(
+                dw&255,
+                (dw>>>8)&255,
+                (dw>>>16)&255,
+                (dw>>>24)&255);
+        }
+        return btoaSafe(str);
+    }
+    static from20Per32bits(b64str){
+        const str = atobSafe(b64str);
+        const intersections = [];
+        for(let si = 0; si < str.length; si += 4){
+            let dw =
+                str.charCodeAt(si) +
+                (si+1<str.length ? (str.charCodeAt(si+1)<<8) : 0) +
+                (si+2<str.length ? (str.charCodeAt(si+2)<<16) : 0) +
+                (si+3<str.length ? (str.charCodeAt(si+3)*(1<<24)) : 0);
+            for(let i = 0; i < 20; ++i){
+                intersections.push(dw % 3);
+                dw = Math.floor(dw / 3);
+            }
+        }
+        return intersections;
+    }
+
+    static toHumanReadable(board){
+        const MARKS = ".xo";
+        let str = "";
+        const size = board.getIntersectionCount();
+        for(let pos = 0; pos < size; ++pos){
+            str += MARKS[board.getAt(pos)];
+        }
+        return str;
+    }
+    static fromHumanReadable(str){
+        const MARKS = ".xo";
+        const STATES = [EMPTY, BLACK, WHITE];
+        const intersections = [];
+        for(let pos = 0; pos < str.length; ++pos){
+            const state = MARKS.indexOf(str.charAt(pos));
+            intersections.push(state >= 0 ? STATES[state] : EMPTY);
+        }
+        return intersections;
+    }
+}
+igo.BoardStringizer = BoardStringizer;
+
+/// HistoryNodeのルートから任意のノードまでの着手を文字列化し、または文字列から戻すためのクラスです。
+class HistoryMovesStringizer{
+    static toBase64(node, w, h){
+        // Bit Stream
+        let str = "";
+        let byte = 0;
+        let bitIndex = 0;
+        function push(value){
+            value &= (1<<bitWidth)-1;
+            const boundary = 8 - bitIndex;
+            byte |= (value & ((1 << boundary)-1)) << bitIndex;
+            bitIndex += bitWidth;
+            if(bitIndex >= 8){
+                str += String.fromCharCode(byte);
+                bitIndex -= 8;
+                byte = value >> boundary;
+            }
+        }
+        function flush(){
+            if(bitIndex > 0){
+                str += String.fromCharCode(byte);
+            }
+        }
+        // bit width of w*h + PASS
+        const bitWidth = Math.ceil(Math.log2(w * h + 1));
+
+        const moves = [];
+
+        for(let n = node; n; n = n.prev){
+            if(n.isPass()){
+                moves.push(w * h);
+            }
+            else if(n.isPlace()){
+                moves.push(n.pos);
+            }
+        }
+        moves.reverse();
+        moves.forEach(push);
+        flush();
+        return btoaSafe(
+            String.fromCharCode(moves.length & 255) +
+            String.fromCharCode((moves.length>>8) & 255) +
+            str);
+    }
+    static fromBase64(b64str, w, h){
+        const str = atobSafe(b64str);
+        const numMoves = str.charCodeAt(0) + (str.charCodeAt(1)<<8);
+
+        // bit width of w*h + PASS
+        const bitWidth = Math.ceil(Math.log2(w * h + 1));
+
+        // Bit Stream
+        let strIndex = 2;
+        let byte = str.charCodeAt(strIndex++);
+        let bitIndex = 0;
+        function get(){
+            const boundary = 8 - bitIndex;
+            let value = (byte >> bitIndex) & ((1<<bitWidth)-1);
+            bitIndex += bitWidth;
+            if(bitIndex >= 8){
+                byte = str.charCodeAt(strIndex++);
+                bitIndex -= 8;
+                value |= (byte & ((1<<bitIndex)-1)) << boundary;
+            }
+            return value;
+        }
+
+        const moves = [];
+        for(let i = 0; i < numMoves; ++i){
+            const pos = get();
+            if(pos >= 0 && pos < w*h){
+                moves.push(pos);
+            }
+            else{
+                moves.push(POS_PASS);
+            }
+        }
+        return moves;
+    }
+}
+igo.HistoryMovesStringizer = HistoryMovesStringizer;
 
 })();

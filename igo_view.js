@@ -843,7 +843,8 @@ class GameView{
             {text:"初期化", handler:()=>this.openResetDialog(), visible:this.editable},
             {text:"SGFインポート", handler:()=>this.importSGF(), visible:this.editable},
             {text:"SGFエクスポート", handler:()=>this.exportSGF()},
-            {text:"ゲーム情報", handler:()=>this.openGameInfo()},
+            {text:"対局情報", handler:()=>this.openGameInfo()},
+            {text:"共有", handler:()=>this.openShareDialog()},
             {text:"フリー編集", handler:()=>this.startFreeEditMode(), visible:this.editable},
             {text:"マーク編集", handler:()=>this.startMarkEditMode(), visible:this.editable},
         ]);
@@ -1689,6 +1690,42 @@ class GameView{
         ]);
     }
 
+    openShareDialog(){
+        let anchor;
+        const dialog = createDialogWindow({}, [
+            "共有",
+            createElement("div", {}, [
+                createRadioButtons("size", [
+                    {value:"board", text:"現在の盤面を共有", checked:true},
+                    {value:"moves", text:"現在までの手順を共有"},
+                ], onMethodChanged).map(elem=>createElement("div", {}, elem))
+            ]),
+            createElement("div", {
+                style: "user-select:text; border:1px solid #444; padding:1em; word-break:break-all;"
+            }, [
+                anchor = createElement("a", {target:"_blank"})
+            ]),
+            createElement("div", {"class":"igo-control-bar"}, [
+                createButton("Close", e=>{dialog.close();})
+            ])
+        ]);
+
+        const game = this.model;
+        updateURL(createBoardQueryURL(game.board));
+        function updateURL(url){
+            anchor.href = url;
+            anchor.innerText = url;
+        }
+
+        function onMethodChanged(value){
+            switch(value){
+            case "board": updateURL(createBoardQueryURL(game.board)); break;
+            case "moves": updateURL(createMovesQueryURL(game)); break;
+            }
+        }
+    }
+
+
     // Comment
 
     createCommentTextArea(updators){
@@ -2227,5 +2264,160 @@ class GameView{
     }
 };
 igo.GameView = GameView;
+
+
+//
+// Query String
+//
+
+function createBoardQueryURL(board){
+    const params = new URLSearchParams();
+    params.append(
+        "board", "" + board.w + (board.w != board.h ? "x" + board.h : "") +
+            "_" + igo.BoardStringizer.to20Per32bits(board));
+    if(board.getTurn() == WHITE){
+        params.append("turn", "W");
+    }
+    if(board.koPos != NPOS){
+        params.append("ko", igo.toSGFPointXY(
+            board.toX(board.koPos),
+            board.toX(board.koPos)));
+    }
+    const blackPrisoners = board.getPrisoners(BLACK);
+    const whitePrisoners = board.getPrisoners(WHITE);
+    if(blackPrisoners > 0 || whitePrisoners > 0){
+        params.append(
+            "hama",
+            blackPrisoners + "_" + whitePrisoners);
+    }
+    const url = new URL(document.location.href);
+    url.search = params.toString();
+    return url.toString();
+}
+
+function createMovesQueryURL(game){
+    const params = new URLSearchParams();
+
+    const w = game.board.w;
+    const h = game.board.h;
+
+    const setup = game.history.getRootNode().getSetup();
+    if(setup){
+        const initialBoard = new igo.Board(w, h);
+        setup.applyTo(initialBoard);
+        const initialBoardStr = "_" + igo.BoardStringizer.to20Per32bits(initialBoard);
+        params.append(
+            "board", "" + w + (w != h ? "x" + h : "") + initialBoardStr);
+        if(initialBoard.getTurn() == WHITE){
+            params.append("turn", "W");
+        }
+    }
+    else{
+        params.append(
+            "board", "" + w + (w != h ? "x" + h : ""));
+    }
+
+    ///@todo support non-root setup node
+    params.append(
+        "moves",
+        igo.HistoryMovesStringizer.toBase64(game.history.getCurrentNode(), game.board.w, game.board.h));
+    const url = new URL(document.location.href);
+    url.search = params.toString();
+    return url.toString();
+}
+
+function createGameFromQuery(){
+    const params = new URLSearchParams(document.location.search.substr(1));
+    let w = 9;
+    let h = 9;
+    let intersections = null;
+    let turn = BLACK;
+    let ko = null;
+    let prisoners = null;
+    let moves = null;
+
+    for(const key of params.keys()){
+        const value = params.get(key);
+        switch(key){
+        case "board":
+            {
+                // ex:
+                // - "9"
+                // - "9x9"
+                // - "9_xoxoxoxox...........................xoxoxoxox...........................oxoxoxoxo"
+                // - "9x9_egZ2cz_jmrOm9LaBw3_StQEAAAAAAAA."
+                const matches = /^(\d+)(x(\d+)|)(_(([.ox]+)|([A-Za-z0-9+/_\-]+[=.]*))|)$/.exec(value);
+                if(matches){
+                    const strW = matches[1];
+                    const strH = matches[3];
+                    const strHumanReadable = matches[6];
+                    const str20Per32bits = matches[7];
+                    w = parseInt(strW);
+                    h = strH ? parseInt(strH) : w;
+                    if(strHumanReadable){
+                        intersections = igo.BoardStringizer.fromHumanReadable(strHumanReadable);
+                    }
+                    else if(str20Per32bits){
+                        intersections = igo.BoardStringizer.from20Per32bits(str20Per32bits);
+                    }
+                }
+            }
+            break;
+        case "turn":
+            switch(value){
+            case "B": turn = BLACK; break;
+            case "W": turn = WHITE; break;
+            }
+            break;
+        case "ko":
+            try{ko = igo.parseSGFPointXY(value, 52, 52);}catch(e){}
+            break;
+        case "hama":
+            {
+                const matches = /^(\d+)[_, ](\d+)$/.exec(value);
+                if(matches){
+                    prisoners = [
+                        parseInt(matches[1]),
+                        parseInt(matches[2])];
+                }
+            }
+            break;
+        case "moves":
+            if(/^[A-Za-z0-9+/_\-]+[=.]*$/.test(value)){
+                moves = value;
+            }
+        }
+    }
+
+
+    const game = new Game(w, h);
+    if(intersections){
+        game.board.setAll(intersections);
+    }
+    if(typeof(turn) == "number"){
+        game.board.setTurn(turn);
+    }
+    if(moves){
+        for(const pos of igo.HistoryMovesStringizer.fromBase64(moves, w, h)){
+            if(pos == POS_PASS){
+                game.pass();
+            }
+            else if(game.board.isValidPosition(pos)){
+                game.putStone(pos);
+            }
+        }
+    }
+    else{
+        if(prisoners){
+            game.board.addPrisoners(BLACK, prisoners[0]);
+            game.board.addPrisoners(WHITE, prisoners[1]);
+        }
+        if(ko){
+            game.board.setKoPos(game.board.toPosition(ko.x, ko.y));
+        }
+    }
+    return game;
+}
+igo.createGameFromQuery = createGameFromQuery;
 
 })();
