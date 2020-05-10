@@ -2392,10 +2392,25 @@ function createGameFromQuery(){
 
     const game = new Game(w, h);
     if(intersections){
-        game.board.setAll(intersections);
+        const setup = game.history.getRootNode().acquireSetup();
+        const size = Math.min(intersections.length, game.board.getIntersectionCount());
+        for(let pos = 0; pos < size; ++pos){
+            const oldState = game.board.getAt(pos);
+            const newState = intersections[pos];
+            if(oldState != newState){
+                setup.addIntersectionChange(pos, oldState, newState);
+                game.board.setAt(pos, newState);
+            }
+        }
     }
     if(typeof(turn) == "number"){
-        game.board.setTurn(turn);
+        const oldTurn = game.board.getTurn();
+        const newTurn = turn;
+        if(oldTurn != newTurn){
+            const setup = game.history.getRootNode().acquireSetup();
+            setup.setTurnChange(oldTurn, newTurn);
+            game.board.setTurn(newTurn);
+        }
     }
     if(moves){
         for(const pos of igo.HistoryMovesStringizer.fromBase64(moves, w, h)){
