@@ -1088,8 +1088,8 @@ class HistoryTree{
             ++this.moveNumber;
         }
     }
-    pushSetupNode(koPosOld, koPosNew, turnOld){
-        return this._pushNewNode(NPOS, koPosNew, new BoardChanges(null, null, null, koPosOld, turnOld));
+    pushSetupNode(koPosNew){
+        return this._pushNewNode(NPOS, koPosNew, null);
     }
     _pushNewNode(pos, koPosNew, boardUndo){
         const newNode = new HistoryNode(this.pointer, pos, koPosNew, boardUndo);
@@ -1533,7 +1533,7 @@ class Game{
                         if(!setup){
                             // add node
                             if(!game.history.getCurrentNode().isSetup()){
-                                game.history.pushSetupNode(game.board.koPos, game.board.koPos, game.board.getTurn()); ///@todo keep koPos? or not?
+                                game.history.pushSetupNode(game.board.koPos); ///@todo keep koPos? or not?
                             }
                             // add setup property
                             setup = game.history.getCurrentNode().acquireSetup();
