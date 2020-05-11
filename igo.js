@@ -1618,6 +1618,14 @@ function BitWriter(){
     let byte = 0;
     let bitIndex = 0;
     function put(value, bitWidth){
+        while(bitWidth > 8){
+            put8(value & 255, 8);
+            value >>>= 8;
+            bitWidth -= 8;
+        }
+        put8(value, bitWidth);
+    }
+    function put8(value, bitWidth){
         value &= (1<<bitWidth)-1;
         const boundary = 8 - bitIndex;
         byte |= (value & ((1 << boundary)-1)) << bitIndex;
@@ -1649,6 +1657,22 @@ function BitReader(str, strIndex){
     let byte = str.charCodeAt(strIndex++);
     let bitIndex = 0;
     function get(bitWidth){
+        if(bitWidth <= 8){
+            return get8(bitWidth);
+        }
+        else{
+            let pos = 0;
+            let value = 0;
+            while(bitWidth > 8){
+                value |= get8(8)<<pos;
+                pos += 8;
+                bitWidth -= 8;
+            }
+            value |= get8(bitWidth) << pos;
+            return value;
+        }
+    }
+    function get8(bitWidth){
         const boundary = 8 - bitIndex;
         let value = (byte >> bitIndex) & ((1<<bitWidth)-1);
         bitIndex += bitWidth;
