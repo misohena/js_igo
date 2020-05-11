@@ -21,6 +21,8 @@ function getOppositeColor(color)
     {return color == BLACK ? WHITE : color == WHITE ? BLACK : color;}
 function getColorIndex(color)
     {return color == BLACK ? 0 : color == WHITE ? 1 : -1;}
+function getIndexOfEmptyBlackWhite(intersectionState)
+    {return intersectionState;}
 igo.isValidColor = isValidColor;
 igo.getOppositeColor = getOppositeColor;
 igo.getColorIndex = getColorIndex;
@@ -847,6 +849,13 @@ class HistoryNode{
         }
         return num;
     }
+    getDepth(){
+        let num = 0;
+        for(let node = this; node.prev; node = node.prev){
+            ++num;
+        }
+        return num;
+    }
 
     // Next Nodes
 
@@ -1010,7 +1019,7 @@ class HistoryNode{
     getSetup(){return this.setup;}
     setSetup(boardChanges){ //set BoardDiff object
         // do not recycle current this.setup object.
-        // see shallowClone() usage in toSGF()
+        // see shallowClone() usage in HistoryTreeString.toString
         this.setup = boardChanges;
     }
     removeSetup(){delete this.setup;}
@@ -1198,6 +1207,11 @@ class HistoryTree{
             this.undo(board, game);
         }
     }
+    undoTo(ancestor, board, game){
+        while(this.pointer != ancestor && this.pointer.prev){
+            this.undo(board, game);
+        }
+    }
     undoAll(board, game){
         while(this.undo(board, game));
     }
@@ -1309,336 +1323,20 @@ class Game{
 
     // SGF
 
-    toSGF(fromCurrentNode){
-        const board = this.board;
-        function toSGFPoint(pos){
-            return toSGFPointXY(board.toX(pos), board.toY(pos));
-        }
-        function toSGFColor(color){
-            return color == BLACK ? "B" : color == WHITE ? "W" : "E";
-        }
-        function toSGFText(str){
-            return str.replace(/([\]\\:])/gi, "\\$1").replace(/[\t\v]/gi, " ");
-        }
-        function toSGFSimpleText(str){
-            return str.replace(/([\]\\:])/gi, "\\$1").replace(/[\t\v\n\r]/gi, " ");
-        }
-
-        // determine start node
-        let startNode;
-        if(fromCurrentNode){
-            // make setup property
-            const emptyBoard = new Board(board.w, board.h);
-            const boardChanges = BoardDiff.diff(emptyBoard, board);
-            // clone current node
-            startNode = this.history.getCurrentNode().shallowClone();
-            startNode.prev = null;
-            startNode.pos = NPOS;
-            startNode.boardUndo = null;
-            startNode.setSetup(boardChanges); //setSetupはclone元の状態を変更しない、はず。
-        }
-        else{
-            startNode = this.history.getRootNode();
-        }
-
-        // Root Node
-        let rootProperties =
-            "GM[1]" +
-            "SZ[" + (board.w == board.h ? board.w : board.w + ":" + board.h) + "]";
-
-        // Game Info Properties (game-infoはRoot Nodeにしかない)
-        const rootNode = this.history.getRootNode();
-        for(const propType of SGF_GAME_INFO_PROPERTIES){
-            if(rootNode.hasProperty(propType.id)){
-                const propValue = rootNode.getProperty(propType.id).value;
-                if(propType.type == "text"){
-                    rootProperties += propType.id + "[" + toSGFText(propValue) + "]";
-                }
-                else{
-                    rootProperties += propType.id + "[" + toSGFSimpleText(propValue) + "]";
-                }
-            }
-        }
-
-        //
-        let str = "";
-        let turn = BLACK;
-
-        startNode.visitAllNodes(
-            (node)=>{ //enter
-                if(node.isResign()){
-                    return; //ignore resign
-                }
-                if(node.getNumberOfSiblings() > 1){
-                    str += "(";
-                }
-                str += ";"; //start node
-                if(node.isRoot()){
-                    str += rootProperties;
-                }
-                if(node.isMove()){
-                    // B, W
-                    str +=
-                        toSGFColor(turn) +
-                        "[" +
-                        (node.isPass() ? "" : toSGFPoint(node.pos)) +
-                        "]";
-                    turn = getOppositeColor(turn);
-                }
-                if(node.hasSetup()){
-                    const setup = node.getSetup();
-                    if(setup && setup.intersections){
-                        for(const change of setup.getCompressedIntersectionChanges(board)){
-                            // AB, AW, AE
-                            str += "A" + toSGFColor(change.state) + "[" +
-                                toSGFPointXY(change.left, change.top) +
-                                (change.left != change.right || change.top != change.bottom ?
-                                 ":" + toSGFPointXY(change.right, change.bottom) : "") + "]";
-                        }
-                    }
-                    if(setup && setup.turn && setup.turn.newTurn != turn){
-                        str += "PL[" + toSGFColor(setup.turn.newTurn) + "]";
-                        turn = setup.turn.newTurn;
-                    }
-                }
-                if(node.hasProperty("marks")){
-                    const marks = node.getProperty("marks").value;
-                    if(marks){
-                        for(const mark of marks){
-                            if(mark.type == "text"){
-                                str += "LB["  + toSGFPoint(mark.pos) + ":" + toSGFSimpleText(mark.text) + "]";
-                            }
-                            else{
-                                const pid =
-                                      mark.type == "circle" ? "CR" :
-                                      mark.type == "triangle" ? "TR" :
-                                      mark.type == "square" ? "SQ" :
-                                      mark.type == "cross" ? "MA" :
-                                      "MA";
-                                str += pid + "[" + toSGFPoint(mark.pos) + "]";
-                            }
-                        }
-                    }
-                }
-                if(node.hasComment()){
-                    // C
-                    str += "C[" + toSGFText(node.getComment()) + "]";
-                }
-            },
-            (node)=>{ //leave
-                if(node.isResign()){
-                    return; //ignore resign
-                }
-                if(node.getNumberOfSiblings() > 1){
-                    str += ")";
-                }
-                if(node.setup && node.setup.turn){
-                    turn = node.setup.turn.oldTurn;
-                }
-                else{
-                    turn = getOppositeColor(turn);
-                }
-            });
-        return "(" + str + ")";
+    toSGF(opt){
+        return HistoryTreeString.toSGF(this, opt);
     }
 
-
     static fromSGF(str){
-        const collection = parseSGF(str);
-        const rootTree = collection[0];
-
-        // Parse root node
-        const rootNode = rootTree.nodes[0];
-        let boardSize = [19];
-        for(let i = 0; i < rootNode.length; ++i){
-            const property = rootNode[i];
-            switch(property.propIdent){
-            case "GM":
-                if(property.propValues[0] != "1"){
-                    throw new Error("Unsupported SGF : Not GM[1]");
-                }
-                break;
-            case "SZ":
-                boardSize = splitSGFCompose(property.propValues[0]).map(s=>{
-                    const n = parseInt(s);
-                    if(!(n >= 1 && n <= 52)){
-                        throw new Error("Invalid board size " + n);
-                    }
-                    return n;
-                });
-                break;
-            }
-        }
-
-        // Create Game object
-        const w = boardSize[0];
-        const h = boardSize.length >= 2 ? boardSize[1] : w;
-        const game = new Game(w, h);
-
-        // represent all moves & create history tree
-        processTree(rootTree, 0);
-        return game;
-
-        function processTree(tree, startIndex){
-            for(let ni = startIndex; ni < tree.nodes.length; ++ni){
-                const nodeProps = tree.nodes[ni];
-                // process node
-                let moved = false;
-                let setup = false;
-                for(const prop of nodeProps){
-                    const pid = prop.propIdent;
-                    const pvalues = prop.propValues;
-                    switch(pid){
-                    // Move Properties
-                    case "B":
-                    case "W":
-                        {
-                            if(moved){
-                                throw new Error("Moved twice in a node");
-                            }
-                            if(setup){
-                                throw new Error("Cannot mix move properties and setup properties");
-                            }
-                            moved = true;
-                            const move = pvalues[0];
-                            const color = pid == "B" ? BLACK : WHITE;
-                            if(game.getTurn() != color){
-                                // 詰碁のSGFでPLなしにWから始まるものがあるので初手だけは許可する。
-                                if( game.getMoveNumber() > 0){
-                                    throw new Error("Unexpected player change " + pid + " " + move);
-                                }
-                                game.history.getCurrentNode().acquireSetup().setTurnChange(game.getTurn(), color); //着手前なのでおそらくルートノード
-                                game.setTurnForced(color);
-                            }
-                            const pos = parseSGFMove(move, w, h);
-                            if(pos == POS_PASS){
-                                game.pass();
-                            }
-                            else{
-                                if(!game.putStone(pos)){
-                                    throw new Error("SGF includes a illegal move at " + move);
-                                }
-                            }
-                        }
-                        break;
-                    // Setup Properties
-                    case "AB":
-                    case "AW":
-                    case "AE":
-                    case "PL":
-                        if(moved){
-                            throw new Error("Cannot mix setup properties and move properties");
-                        }
-                        // prepare setup property(BoardDiff)
-                        if(!setup){
-                            // add node
-                            if(!game.history.getCurrentNode().isSetup()){
-                                game.history.pushSetupNode(game.board.koPos); ///@todo keep koPos? or not?
-                            }
-                            // add setup property
-                            setup = game.history.getCurrentNode().acquireSetup();
-                        }
-                        if(pid == "AB" || pid == "AW" || pid == "AE"){
-                            //change intersection
-                            for(const value of pvalues){
-                                const points = parseSGFComposedPoint(value, w, h);
-                                for(const pos of points){
-                                    if(isValidPosition(pos, w, h)){
-                                        const oldState = game.board.getAt(pos);
-                                        const newState = pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY;
-                                        setup.addIntersectionChange(pos, oldState, newState);
-                                        game.setIntersectionStateForced(pos, newState);
-                                    }
-                                }
-                            }
-                        }
-                        else if(pid == "PL"){
-                            //change turn
-                            const newTurn = pvalues[0] == "B" ? BLACK : pvalues[0] == "W" ? WHITE : EMPTY;
-                            if(newTurn == EMPTY){
-                                throw new Error("Invalid color " + pid + " " + pvalues[0]);
-                            }
-                            const oldTurn = game.getTurn();
-                            setup.setTurnChange(oldTurn, newTurn);
-                            game.setTurnForced(newTurn);
-                        }
-                        break;
-                    // Node Annotation Properties
-                    case "C":
-                        game.setCommentToCurrentNode(parseSGFText(pvalues[0]));
-                        break;
-                    // Markup Properties
-                    case "MA":
-                    case "CR":
-                    case "SQ":
-                    case "TR":
-                        {
-                            const node = game.history.getCurrentNode();
-                            const marks = node.acquireProperty("marks", []).value;
-                            const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
-                            for(const point of points){
-                                marks.push({
-                                    pos: point,
-                                    type: pid == "CR" ? "circle" :
-                                        pid == "SQ" ? "square" :
-                                        pid == "TR" ? "triangle" :
-                                        "cross"});
-                            }
-                        }
-                        break;
-                    case "LB":
-                        {
-                            const node = game.history.getCurrentNode();
-                            const marks = node.acquireProperty("marks", []).value;
-                            for(const value of pvalues){
-                                const valuePointText = splitSGFCompose(value);
-                                const point = parseSGFPoint(valuePointText[0], w, h);
-                                const text = parseSGFSimpleText(valuePointText[1]);
-                                marks.push({pos:point, type:"text", text});
-                            }
-                        }
-                        break;
-                    // Miscellaneous Properties
-                    case "VW":
-                        {
-                            const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
-                            game.history.setPropertyToCurrentNode("VW", points, true); //inherit (to subsequences, subtrees)
-                        }
-                        break;
-                    default:
-                        // Game Info Properties
-                        {
-                            const propType = getSGFGameInfoPropertyType(pid);
-                            if(propType){
-                                const value = propType.type == "text" ? parseSGFText(pvalues[0]) :
-                                      // number, real, simpletext
-                                      parseSGFSimpleText(pvalues[0]);
-                                game.history.getRootNode().addProperty(pid, value);
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-
-            // represent branches
-            for(let bi = 0; bi < tree.subtrees.length; ++bi){
-                const branchTree = tree.subtrees[bi];
-                processTree(branchTree, 0);
-            }
-
-            // undo moves
-            for(let ni = startIndex; ni < tree.nodes.length; ++ni){
-                game.undo();
-            }
-        }
+        return HistoryTreeString.fromSGF(str);
     }
 }
 igo.Game = Game;
 
 
-
-
+//
+// SGF
+//
 // https://www.red-bean.com/sgf/sgf4.html
 //
 //  Collection = GameTree+
@@ -1855,6 +1553,20 @@ function toSGFPointXY(x, y){
 }
 igo.toSGFPointXY = toSGFPointXY;
 
+function toSGFPoint(pos, board){
+    return toSGFPointXY(board.toX(pos), board.toY(pos));
+}
+function toSGFColor(color){
+    return color == BLACK ? "B" : color == WHITE ? "W" : "E";
+}
+function toSGFText(str){
+    return str.replace(/([\]\\:])/gi, "\\$1").replace(/[\t\v]/gi, " ");
+}
+function toSGFSimpleText(str){
+    return str.replace(/([\]\\:])/gi, "\\$1").replace(/[\t\v\n\r]/gi, " ");
+}
+
+
 // SGF propertis
 
 const SGF_GAME_INFO_PROPERTIES = [
@@ -1900,6 +1612,56 @@ function btoaSafe(b){
 function atobSafe(a){
     return atob(a.replace(/-/g, "+").replace(/_/g, "/").replace(/\./g, "="));
 }
+
+function BitWriter(){
+    let str = "";
+    let byte = 0;
+    let bitIndex = 0;
+    function put(value, bitWidth){
+        value &= (1<<bitWidth)-1;
+        const boundary = 8 - bitIndex;
+        byte |= (value & ((1 << boundary)-1)) << bitIndex;
+        bitIndex += bitWidth;
+        if(bitIndex >= 8){
+            str += String.fromCharCode(byte);
+            bitIndex -= 8;
+            byte = value >> boundary;
+        }
+    }
+    function flush(){
+        if(bitIndex > 0){
+            str += String.fromCharCode(byte);
+            byte = 0;
+            bitIndex = 0;
+        }
+        const result = str;
+        str = "";
+        return result;
+    }
+    this.put = put;
+    this.flush = flush;
+}
+
+function BitReader(str, strIndex){
+    if(strIndex === undefined){
+        strIndex = 0;
+    }
+    let byte = str.charCodeAt(strIndex++);
+    let bitIndex = 0;
+    function get(bitWidth){
+        const boundary = 8 - bitIndex;
+        let value = (byte >> bitIndex) & ((1<<bitWidth)-1);
+        bitIndex += bitWidth;
+        if(bitIndex >= 8){
+            byte = str.charCodeAt(strIndex++);
+            bitIndex -= 8;
+            value |= (byte & ((1<<bitIndex)-1)) << boundary;
+        }
+        return value;
+    }
+    this.get = get;
+}
+
 
 // 盤面の交点を文字列へ変換し、または文字列から戻すためのクラスです。
 class BoardStringizer{
@@ -1959,86 +1721,630 @@ class BoardStringizer{
 }
 igo.BoardStringizer = BoardStringizer;
 
-/// HistoryNodeのルートから任意のノードまでの着手を文字列化し、または文字列から戻すためのクラスです。
-class HistoryMovesStringizer{
-    static toBase64(node, w, h){
-        // Bit Stream
-        let str = "";
-        let byte = 0;
-        let bitIndex = 0;
-        function push(value){
-            value &= (1<<bitWidth)-1;
-            const boundary = 8 - bitIndex;
-            byte |= (value & ((1 << boundary)-1)) << bitIndex;
-            bitIndex += bitWidth;
-            if(bitIndex >= 8){
-                str += String.fromCharCode(byte);
-                bitIndex -= 8;
-                byte = value >> boundary;
-            }
-        }
-        function flush(){
-            if(bitIndex > 0){
-                str += String.fromCharCode(byte);
-            }
-        }
-        // bit width of w*h + PASS
-        const bitWidth = Math.ceil(Math.log2(w * h + 1));
 
-        const moves = [];
+//
+// HistoryTreeString
+//
 
-        for(let n = node; n; n = n.prev){
-            if(n.isPass()){
-                moves.push(w * h);
-            }
-            else if(n.isPlace()){
-                moves.push(n.pos);
-            }
-        }
-        moves.reverse();
-        moves.forEach(push);
-        flush();
-        return btoaSafe(
-            String.fromCharCode(moves.length & 255) +
-            String.fromCharCode((moves.length>>8) & 255) +
-            str);
+class HistoryTreeFormatter{
+    toString(){}
+    beginTree(turn){}
+    endTree(turn){}
+    putResign(turn){}
+    putPass(turn){}
+    putPlace(pos, turn){}
+    putSetupNode(node, turn){}
+    putSetupProperty(setup, turn){}
+    putMarks(marks){}
+    putComment(comment){}
+    beginBranch(node, turn){}
+    endBranch(node, turn){}
+}
+
+const HTS_CMD_PASS = 0;
+const HTS_CMD_BEGIN_BRANCH = 1;
+const HTS_CMD_END_BRANCH = 2;
+const HTS_CMD_SPECIAL = 3;
+const HTS_CMD_UPPER = 4;
+const HTS_SUBCMD_RESIGN = 1;
+const HTS_SUBCMD_SETUP = 2;
+const HTS_BITWIDTH_SUBCMD = 6;
+
+class HistoryTreeBase64Formatter extends HistoryTreeFormatter{
+    constructor(board){
+        super();
+
+        this.board = board;
+        this.boardSize = board.w * board.h;
+        this.bitWriter = new BitWriter();
+        this.bitWidth = Math.ceil(Math.log2(this.boardSize + HTS_CMD_UPPER));
     }
-    static fromBase64(b64str, w, h){
-        const str = atobSafe(b64str);
-        const numMoves = str.charCodeAt(0) + (str.charCodeAt(1)<<8);
 
-        // bit width of w*h + PASS
-        const bitWidth = Math.ceil(Math.log2(w * h + 1));
+    putPos(pos){
+        this.bitWriter.put(pos, this.bitWidth);
+    }
+    putCmd(cmd){
+        this.bitWriter.put(this.boardSize + cmd, this.bitWidth);
+    }
+    putSubCmd(subcmd){
+        this.putCmd(HTS_CMD_SPECIAL);
+        this.bitWriter.put(subcmd, HTS_BITWIDTH_SUBCMD);
+    }
 
-        // Bit Stream
-        let strIndex = 2;
-        let byte = str.charCodeAt(strIndex++);
-        let bitIndex = 0;
-        function get(){
-            const boundary = 8 - bitIndex;
-            let value = (byte >> bitIndex) & ((1<<bitWidth)-1);
-            bitIndex += bitWidth;
-            if(bitIndex >= 8){
-                byte = str.charCodeAt(strIndex++);
-                bitIndex -= 8;
-                value |= (byte & ((1<<bitIndex)-1)) << boundary;
+    // override
+
+    toString(){
+        return btoaSafe(this.bitWriter.flush());
+    }
+
+    beginTree(turn){}//ルートのbeginBranch()は省略。
+    endTree(turn){this.endBranch(turn);}//終端のために必要
+    putPlace(pos, turn){this.putPos(pos);}
+    putPass(turn){this.putCmd(HTS_CMD_PASS);}
+    putResign(turn){this.putSubCmd(HTS_SUBCMD_RESIGN);}
+    beginBranch(node, turn){this.putCmd(HTS_CMD_BEGIN_BRANCH);}
+    endBranch(node, turn){this.putCmd(HTS_CMD_END_BRANCH);}
+
+    putSetupProperty(setup, turn){
+        this.putSubCmd(HTS_SUBCMD_SETUP);
+        if(setup.intersections){
+            this.bitWriter.put(1, 1);
+            // 色別、点・矩形別に分類する。
+            const states = [
+                {points:[], rects:[]}, //EMPTY
+                {points:[], rects:[]}, //BLACK
+                {points:[], rects:[]}]; //WHITE
+            for(const change of setup.getCompressedIntersectionChanges(this.board)){
+                const stateIndex = getIndexOfEmptyBlackWhite(change.state);
+                if(change.left == change.right && change.top == change.bottom){
+                    states[stateIndex].points.push(change);
+                }
+                else{
+                    states[stateIndex].rects.push(change);
+                }
             }
-            return value;
+            // 色別、点・矩形別に出力する。
+            for(let si = 0; si < 3; ++si){
+                for(let change of states[si].points){
+                    this.putPos(this.board.toPosition(change.left, change.top));
+                }
+                this.putPos(this.boardSize);
+                for(let change of states[si].rects){
+                    this.putPos(this.board.toPosition(change.left, change.top));
+                    this.putPos(this.board.toPosition(change.right, change.bottom));
+                }
+                this.putPos(this.boardSize);
+            }
         }
-
-        const moves = [];
-        for(let i = 0; i < numMoves; ++i){
-            const pos = get();
-            if(pos >= 0 && pos < w*h){
-                moves.push(pos);
-            }
-            else{
-                moves.push(POS_PASS);
-            }
+        else{
+            this.bitWriter.put(0, 1);
         }
-        return moves;
+        if(setup.turn && setup.turn.newTurn != turn){
+            this.bitWriter.put(1, 1);
+            this.bitWriter.put(setup.turn.newTurn == BLACK ? 0 : 1, 1);
+            turn = setup.turn.newTurn;
+        }
+        else{
+            this.bitWriter.put(0, 1);
+        }
     }
 }
-igo.HistoryMovesStringizer = HistoryMovesStringizer;
+
+class HistoryTreeSGFFormatter extends HistoryTreeFormatter {
+    constructor(board){
+        super();
+        this.board = board;
+        this.str = "";
+    }
+
+    toString(){
+        return this.str;
+    }
+
+    beginTree(turn){
+        this.str += "(";
+    }
+    endTree(turn){
+        this.str += ")";
+    }
+
+    beginBranch(node, turn){
+        if(node.isResign() && node.nexts.length == 0){
+            return; //ignore resign only branch
+        }
+        this.str += "(";
+    }
+    endBranch(node, turn){
+        if(node.isResign() && node.nexts.length == 0){
+            return; //ignore resign only branch
+        }
+        this.str += ")";
+    }
+
+    putResign(turn){
+        // ignore
+    }
+    putPass(turn){
+        this.str += ";" + toSGFColor(turn) +"[]";
+    }
+    putPlace(pos, turn){
+        this.str += ";" + toSGFColor(turn) + "[" + toSGFPoint(pos, this.board) + "]";
+    }
+    putSetupNode(node, turn){
+        this.str += ";";
+        if(node.isRoot()){
+            // Root Node
+            let rootProperties =
+                "GM[1]" +
+                "SZ[" + (this.board.w == this.board.h ? this.board.w : this.board.w + ":" + this.board.h) + "]";
+
+            // Game Info Properties (game-infoはRoot Nodeにしかない)
+            for(const propType of SGF_GAME_INFO_PROPERTIES){
+                if(node.hasProperty(propType.id)){
+                    const propValue = node.getProperty(propType.id).value;
+                    if(propType.type == "text"){
+                        rootProperties += propType.id + "[" + toSGFText(propValue) + "]";
+                    }
+                    else{
+                        rootProperties += propType.id + "[" + toSGFSimpleText(propValue) + "]";
+                    }
+                }
+            }
+            this.str += rootProperties;
+        }
+    }
+    putSetupProperty(setup, turn){
+        if(setup.intersections){
+            for(const change of setup.getCompressedIntersectionChanges(this.board)){
+                // AB, AW, AE
+                this.str += "A" + toSGFColor(change.state) + "[" +
+                    toSGFPointXY(change.left, change.top) +
+                    (change.left != change.right || change.top != change.bottom ?
+                     ":" + toSGFPointXY(change.right, change.bottom) : "") + "]";
+            }
+        }
+        if(setup.turn && setup.turn.newTurn != turn){
+            this.str += "PL[" + toSGFColor(setup.turn.newTurn) + "]";
+            turn = setup.turn.newTurn;
+        }
+    }
+    putMarks(marks){
+        for(const mark of marks){
+            if(mark.type == "text"){
+                this.str += "LB["  + toSGFPoint(mark.pos, this.board) + ":" + toSGFSimpleText(mark.text) + "]";
+            }
+            else{
+                const pid =
+                      mark.type == "circle" ? "CR" :
+                      mark.type == "triangle" ? "TR" :
+                      mark.type == "square" ? "SQ" :
+                      mark.type == "cross" ? "MA" :
+                      "MA";
+                this.str += pid + "[" + toSGFPoint(mark.pos, this.board) + "]";
+            }
+        }
+    }
+    putComment(comment){
+        this.str += "C[" + toSGFText(comment) + "]";
+    }
+}
+
+class HistoryTreeString {
+    static toString(game, opt, format){
+        if(!opt){ opt = {};}
+        const board = game.board;
+        const history = game.history;
+
+        // determine start node
+        let startNode;
+        if(opt.fromCurrentNode){
+            // make setup property
+            const emptyBoard = new Board(board.w, board.h);
+            const boardChanges = BoardDiff.diff(emptyBoard, board);
+            // clone current node
+            startNode = history.getCurrentNode().shallowClone();
+            startNode.prev = null;
+            startNode.pos = NPOS;
+            startNode.boardUndo = null;
+            startNode.setSetup(boardChanges); //setSetupはclone元の状態を変更しない、はず。
+        }
+        else{
+            startNode = history.getRootNode();
+        }
+        let turn = BLACK;
+
+        // output tree
+        format.beginTree(turn);
+        if(opt.toCurrentNode){
+            if(opt.fromCurrentNode){
+                // output current node only
+                putNode(startNode);
+            }
+            else{
+                // output straight path from root node to current node
+                const nodes = [];
+                for(let node = history.getCurrentNode(); node; node = node.prev){
+                    nodes.push(node);
+                }
+                nodes.reverse();
+                for(const node of nodes){
+                    putNode(node);
+                }
+            }
+        }
+        else{
+            // output all nodes in the tree
+            startNode.visitAllNodes(
+                (node)=>{ //enter
+                    if(node.getNumberOfSiblings() > 1){
+                        format.beginBranch(node, turn);
+                    }
+                    putNode(node);
+                },
+                (node)=>{ //leave
+                    if(node.getNumberOfSiblings() > 1){
+                        format.endBranch(node, turn);
+                    }
+                    if(node.setup && node.setup.turn){
+                        turn = node.setup.turn.oldTurn;
+                    }
+                    else{
+                        if(node.isPass() || node.isPlace()){
+                            turn = getOppositeColor(turn);
+                        }
+                    }
+                });
+        }
+        format.endTree(turn);
+        return format.toString();
+
+        function putNode(node){
+            if(node.isResign()){
+                format.putResign(turn);
+            }
+            else if(node.isPass()){
+                format.putPass(turn);
+                turn = getOppositeColor(turn);
+            }
+            else if(node.isPlace()){
+                format.putPlace(node.pos, turn);
+                turn = getOppositeColor(turn);
+            }
+            else{
+                format.putSetupNode(node, turn);
+            }
+
+            if(node.hasSetup()){
+                const setup = node.getSetup();
+                format.putSetupProperty(setup, turn);
+                if(setup.turn && setup.turn.newTurn != turn){
+                    turn = setup.turn.newTurn;
+                }
+            }
+            if(node.hasProperty("marks")){
+                const marks = node.getProperty("marks").value;
+                if(marks){
+                    format.putMarks(marks, turn);
+                }
+            }
+            if(node.hasComment()){
+                format.putComment(node.getComment(), turn);
+            }
+        }
+    }
+
+    static toBase64(game, opt){
+        return HistoryTreeString.toString(game, opt, new HistoryTreeBase64Formatter(game.board));
+    }
+    static toSGF(game, opt){
+        return HistoryTreeString.toString(game, opt, new HistoryTreeSGFFormatter(game.board));
+    }
+
+
+    static fromBase64(b64str, w, h){
+        const bitReader = new BitReader(atobSafe(b64str));
+        const boardSize = w * h;
+        const bitWidth = Math.ceil(Math.log2(boardSize + HTS_CMD_UPPER)); //min bit width that can represent positions and commands
+
+        function readPos() {return bitReader.get(bitWidth);}
+        function readSubCmd() {return bitReader.get(HTS_BITWIDTH_SUBCMD);}
+        function read1Bit() {return bitReader.get(1);}
+
+        const game = new Game(w, h);
+        const board = game.board;
+
+        const nodeStack = [];
+        for(;;){
+            const pos = readPos();
+            if(pos >= 0 && pos < boardSize){
+                if(!game.putStone(pos)){
+                    console.log("illegal move " + pos);
+                    return null; //illegal move
+                }
+            }
+            else{
+                const cmd = pos - boardSize;
+                switch(cmd){
+                case HTS_CMD_PASS: game.pass(); break;
+                case HTS_CMD_BEGIN_BRANCH:
+                    nodeStack.push(game.history.getCurrentNode());
+                    break;
+                case HTS_CMD_END_BRANCH:
+                    if(nodeStack.length == 0){
+                        game.history.undoAll(board, game);
+                        return game; //end of tree
+                    }
+                    else{
+                        game.history.undoTo(nodeStack.pop(), board, game);
+                    }
+                    break;
+                case HTS_CMD_SPECIAL:
+                    {
+                        const subcmd = readSubCmd();
+                        switch(subcmd){
+                        case HTS_SUBCMD_RESIGN: game.resign(); break;
+                        case HTS_SUBCMD_SETUP: procSetup(); break;
+                        default:
+                            console.log("unknown subcmd " + subcmd);
+                            return null; //unknown subcmd
+                        }
+                    }
+                    break;
+                default:
+                    console.log("unknown cmd " + pos - boardSize);
+                    return null; //unknown cmd
+                }
+            }
+        }
+        return game;
+
+        function procSetup(){
+            // Add new empty node
+            if(! (game.history.getCurrentNode().isRoot() && nodeStack.length == 0)){
+                game.history.pushSetupNode(board.koPos); ///@todo keep koPos? or not?
+            }
+            // Add setup property
+            const setup = game.history.getCurrentNode().acquireSetup();
+            // setup intersections
+            if(read1Bit() != 0){
+                const states = [EMPTY, BLACK, WHITE];
+                for(let si = 0; si < 3; ++si){
+                    const newState = states[si];
+                    // points
+                    for(;;){
+                        const pos = readPos();
+                        if(pos >= boardSize){
+                            break;
+                        }
+                        if(board.isValidPosition(pos)){
+                            const oldState = board.getAt(pos);
+                            setup.addIntersectionChange(pos, oldState, newState);
+                            game.setIntersectionStateForced(pos, newState);
+                        }
+                    }
+                    // rectangles
+                    for(;;){
+                        const posLeftTop = readPos();
+                        if(posLeftTop >= boardSize){
+                            break;
+                        }
+                        const posRightBottom = readPos();
+                        const left = board.toX(posLeftTop);
+                        const top = board.toY(posLeftTop);
+                        const right = board.toX(posRightBottom);
+                        const bottom = board.toY(posRightBottom);
+                        for(let y = top; y <= bottom; ++y){
+                            for(let x = left; x <= right; ++x){
+                                const pos = board.toPosition(x, y);
+                                const oldState = board.getAt(pos);
+                                setup.addIntersectionChange(pos, oldState, newState);
+                                game.setIntersectionStateForced(pos, newState);
+                            }
+                        }
+                    }
+                }
+            }
+            // setup turn
+            if(read1Bit() != 0){
+                const newTurn = read1Bit() == 0 ? BLACK : WHITE;
+                const oldTurn = game.getTurn();
+                setup.setTurnChange(oldTurn, newTurn);
+                game.setTurnForced(newTurn);
+            }
+        }
+    }
+
+    static fromSGF(str){
+        const collection = parseSGF(str);
+        const rootTree = collection[0];
+
+        // Parse root node
+        const rootNode = rootTree.nodes[0];
+        let boardSize = [19];
+        for(let i = 0; i < rootNode.length; ++i){
+            const property = rootNode[i];
+            switch(property.propIdent){
+            case "GM":
+                if(property.propValues[0] != "1"){
+                    throw new Error("Unsupported SGF : Not GM[1]");
+                }
+                break;
+            case "SZ":
+                boardSize = splitSGFCompose(property.propValues[0]).map(s=>{
+                    const n = parseInt(s);
+                    if(!(n >= 1 && n <= 52)){
+                        throw new Error("Invalid board size " + n);
+                    }
+                    return n;
+                });
+                break;
+            }
+        }
+
+        // Create Game object
+        const w = boardSize[0];
+        const h = boardSize.length >= 2 ? boardSize[1] : w;
+        const game = new Game(w, h);
+
+        // represent all moves & create history tree
+        processTree(rootTree, 0);
+        return game;
+
+        function processTree(tree, startIndex){
+            for(let ni = startIndex; ni < tree.nodes.length; ++ni){
+                const nodeProps = tree.nodes[ni];
+                // process node
+                let moved = false;
+                let setup = false;
+                for(const prop of nodeProps){
+                    const pid = prop.propIdent;
+                    const pvalues = prop.propValues;
+                    switch(pid){
+                    // Move Properties
+                    case "B":
+                    case "W":
+                        {
+                            if(moved){
+                                throw new Error("Moved twice in a node");
+                            }
+                            if(setup){
+                                throw new Error("Cannot mix move properties and setup properties");
+                            }
+                            moved = true;
+                            const move = pvalues[0];
+                            const color = pid == "B" ? BLACK : WHITE;
+                            if(game.getTurn() != color){
+                                // 詰碁のSGFでPLなしにWから始まるものがあるので初手だけは許可する。
+                                if( game.getMoveNumber() > 0){
+                                    throw new Error("Unexpected player change " + pid + " " + move);
+                                }
+                                game.history.getCurrentNode().acquireSetup().setTurnChange(game.getTurn(), color); //着手前なのでおそらくルートノード
+                                game.setTurnForced(color);
+                            }
+                            const pos = parseSGFMove(move, w, h);
+                            if(pos == POS_PASS){
+                                game.pass();
+                            }
+                            else{
+                                if(!game.putStone(pos)){
+                                    throw new Error("SGF includes a illegal move at " + move);
+                                }
+                            }
+                        }
+                        break;
+                    // Setup Properties
+                    case "AB":
+                    case "AW":
+                    case "AE":
+                    case "PL":
+                        if(moved){
+                            throw new Error("Cannot mix setup properties and move properties");
+                        }
+                        // prepare setup property(BoardDiff)
+                        if(!setup){
+                            // add node
+                            if(!game.history.getCurrentNode().isSetup()){
+                                game.history.pushSetupNode(game.board.koPos); ///@todo keep koPos? or not?
+                            }
+                            // add setup property
+                            setup = game.history.getCurrentNode().acquireSetup();
+                        }
+                        if(pid == "AB" || pid == "AW" || pid == "AE"){
+                            //change intersection
+                            for(const value of pvalues){
+                                const points = parseSGFComposedPoint(value, w, h);
+                                for(const pos of points){
+                                    if(isValidPosition(pos, w, h)){
+                                        const oldState = game.board.getAt(pos);
+                                        const newState = pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY;
+                                        setup.addIntersectionChange(pos, oldState, newState);
+                                        game.setIntersectionStateForced(pos, newState);
+                                    }
+                                }
+                            }
+                        }
+                        else if(pid == "PL"){
+                            //change turn
+                            const newTurn = pvalues[0] == "B" ? BLACK : pvalues[0] == "W" ? WHITE : EMPTY;
+                            if(newTurn == EMPTY){
+                                throw new Error("Invalid color " + pid + " " + pvalues[0]);
+                            }
+                            const oldTurn = game.getTurn();
+                            setup.setTurnChange(oldTurn, newTurn);
+                            game.setTurnForced(newTurn);
+                        }
+                        break;
+                    // Node Annotation Properties
+                    case "C":
+                        game.setCommentToCurrentNode(parseSGFText(pvalues[0]));
+                        break;
+                    // Markup Properties
+                    case "MA":
+                    case "CR":
+                    case "SQ":
+                    case "TR":
+                        {
+                            const node = game.history.getCurrentNode();
+                            const marks = node.acquireProperty("marks", []).value;
+                            const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
+                            for(const point of points){
+                                marks.push({
+                                    pos: point,
+                                    type: pid == "CR" ? "circle" :
+                                        pid == "SQ" ? "square" :
+                                        pid == "TR" ? "triangle" :
+                                        "cross"});
+                            }
+                        }
+                        break;
+                    case "LB":
+                        {
+                            const node = game.history.getCurrentNode();
+                            const marks = node.acquireProperty("marks", []).value;
+                            for(const value of pvalues){
+                                const valuePointText = splitSGFCompose(value);
+                                const point = parseSGFPoint(valuePointText[0], w, h);
+                                const text = parseSGFSimpleText(valuePointText[1]);
+                                marks.push({pos:point, type:"text", text});
+                            }
+                        }
+                        break;
+                    // Miscellaneous Properties
+                    case "VW":
+                        {
+                            const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
+                            game.history.setPropertyToCurrentNode("VW", points, true); //inherit (to subsequences, subtrees)
+                        }
+                        break;
+                    default:
+                        // Game Info Properties
+                        {
+                            const propType = getSGFGameInfoPropertyType(pid);
+                            if(propType){
+                                const value = propType.type == "text" ? parseSGFText(pvalues[0]) :
+                                      // number, real, simpletext
+                                      parseSGFSimpleText(pvalues[0]);
+                                game.history.getRootNode().addProperty(pid, value);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // represent branches
+            for(let bi = 0; bi < tree.subtrees.length; ++bi){
+                const branchTree = tree.subtrees[bi];
+                processTree(branchTree, 0);
+            }
+
+            // undo moves
+            for(let ni = startIndex; ni < tree.nodes.length; ++ni){
+                game.undo();
+            }
+        }
+    }
+}
+igo.HistoryTreeString = HistoryTreeString;
 
 })();

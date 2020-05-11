@@ -1628,17 +1628,31 @@ class GameView{
     // SGF
 
     exportSGF(){
+        const opt = {
+            fromCurrentNode:false,
+            toCurrentNode:false
+        };
+        const model = this.model;
+        function update(){
+            textarea.value = model.toSGF(opt);
+            textarea.select();
+        }
         const {dialog, textarea} = createTextDialog(
             "Export SGF",
-            this.model.toSGF(),
+            "",
             createElement("div", {}, [
                 createCheckbox("現在の盤面から始まる棋譜を出力", false, e=>{
-                    textarea.value = this.model.toSGF(e.target.checked);
-                    textarea.select();
+                    opt.fromCurrentNode = e.target.checked;
+                    update();
+                }),
+                createElement("br"),
+                createCheckbox("現在の盤面までの棋譜を出力", false, e=>{
+                    opt.toCurrentNode = e.target.checked;
+                    update();
                 })
             ])
         );
-        textarea.select();
+        update();
     }
     importSGF(){
         const {dialog, textarea} = createTextDialog(
@@ -1698,6 +1712,8 @@ class GameView{
                 createRadioButtons("size", [
                     {value:"board", text:"現在の盤面を共有", checked:true},
                     {value:"moves", text:"現在までの手順を共有"},
+                    {value:"tree", text:"全手順を共有"},
+                    {value:"tree-after", text:"現在から後の手順を共有"},
                 ], onMethodChanged).map(elem=>createElement("div", {}, elem))
             ]),
             createElement("div", {
@@ -1720,7 +1736,9 @@ class GameView{
         function onMethodChanged(value){
             switch(value){
             case "board": updateURL(createBoardQueryURL(game.board)); break;
-            case "moves": updateURL(createMovesQueryURL(game)); break;
+            case "moves": updateURL(createTreeQueryURL(game, {toCurrentNode:true})); break;
+            case "tree": updateURL(createTreeQueryURL(game)); break;
+            case "tree-after": updateURL(createTreeQueryURL(game, {fromCurrentNode:true})); break;
             }
         }
     }
@@ -2295,32 +2313,39 @@ function createBoardQueryURL(board){
     return url.toString();
 }
 
-function createMovesQueryURL(game){
+function createTreeQueryURL(game, opt){
     const params = new URLSearchParams();
 
     const w = game.board.w;
     const h = game.board.h;
 
-    const setup = game.history.getRootNode().getSetup();
-    if(setup){
-        const initialBoard = new igo.Board(w, h);
-        setup.applyTo(initialBoard);
-        const initialBoardStr = "_" + igo.BoardStringizer.to20Per32bits(initialBoard);
-        params.append(
-            "board", "" + w + (w != h ? "x" + h : "") + initialBoardStr);
-        if(initialBoard.getTurn() == WHITE){
-            params.append("turn", "W");
+    params.append("board", "" + w + (w != h ? "x" + h : ""));
+    params.append("tree", igo.HistoryTreeString.toBase64(game, opt));
+
+    // 現在の盤面を開くためのパスを求める。
+    if(opt && opt.toCurrentNode){
+        // 一本道なので最後のノード
+        const depth = game.history.getCurrentNode().getDepth();
+        if(depth > 0){
+            params.append("path", depth);
         }
     }
+    else if(opt && opt.fromCurrentNode){
+        // 最初が現在の盤面なので不要
+    }
     else{
-        params.append(
-            "board", "" + w + (w != h ? "x" + h : ""));
+        const forks = [];
+        for(let node = game.history.getCurrentNode(); node && node.prev; node = node.prev){
+            if(node.prev.nexts.length >= 2){
+                forks.push(String.fromCharCode(0x41 + node.prev.nexts.indexOf(node)));
+            }
+        }
+        if(forks.length > 0){
+            forks.reverse();
+            params.append("path", forks.join("-"));
+        }
     }
 
-    ///@todo support non-root setup node
-    params.append(
-        "moves",
-        igo.HistoryMovesStringizer.toBase64(game.history.getCurrentNode(), game.board.w, game.board.h));
     const url = new URL(document.location.href);
     url.search = params.toString();
     return url.toString();
@@ -2334,7 +2359,8 @@ function createGameFromQuery(){
     let turn = BLACK;
     let ko = null;
     let prisoners = null;
-    let moves = null;
+    let tree = null;
+    let path = null;
 
     for(const key of params.keys()){
         const value = params.get(key);
@@ -2382,47 +2408,52 @@ function createGameFromQuery(){
                 }
             }
             break;
-        case "moves":
+        case "tree":
             if(/^[A-Za-z0-9+/_\-]+[=.]*$/.test(value)){
-                moves = value;
+                tree = value;
             }
+            break;
+        case "path":
+            path = value.split(/ *[,_\- ] */).reduce((acc, curr)=>{
+                if(/^[0-9]+$/.test(curr)){
+                    acc.push(parseInt(curr));
+                }
+                else if(/^[A-Za-z]{1,2}$/.test(curr)){
+                    acc.push(curr);
+                }
+                return acc;
+            }, []);
+            break;
         }
     }
 
-
-    const game = new Game(w, h);
-    if(intersections){
-        const setup = game.history.getRootNode().acquireSetup();
-        const size = Math.min(intersections.length, game.board.getIntersectionCount());
-        for(let pos = 0; pos < size; ++pos){
-            const oldState = game.board.getAt(pos);
-            const newState = intersections[pos];
-            if(oldState != newState){
-                setup.addIntersectionChange(pos, oldState, newState);
-                game.board.setAt(pos, newState);
-            }
-        }
-    }
-    if(typeof(turn) == "number"){
-        const oldTurn = game.board.getTurn();
-        const newTurn = turn;
-        if(oldTurn != newTurn){
-            const setup = game.history.getRootNode().acquireSetup();
-            setup.setTurnChange(oldTurn, newTurn);
-            game.board.setTurn(newTurn);
-        }
-    }
-    if(moves){
-        for(const pos of igo.HistoryMovesStringizer.fromBase64(moves, w, h)){
-            if(pos == POS_PASS){
-                game.pass();
-            }
-            else if(game.board.isValidPosition(pos)){
-                game.putStone(pos);
-            }
-        }
+    let game;
+    if(tree){
+        game = igo.HistoryTreeString.fromBase64(tree, w, h);
     }
     else{
+        game = new Game(w, h);
+        if(intersections){
+            const setup = game.history.getRootNode().acquireSetup();
+            const size = Math.min(intersections.length, game.board.getIntersectionCount());
+            for(let pos = 0; pos < size; ++pos){
+                const oldState = game.board.getAt(pos);
+                const newState = intersections[pos];
+                if(oldState != newState){
+                    setup.addIntersectionChange(pos, oldState, newState);
+                    game.board.setAt(pos, newState);
+                }
+            }
+        }
+        if(typeof(turn) == "number"){
+            const oldTurn = game.board.getTurn();
+            const newTurn = turn;
+            if(oldTurn != newTurn){
+                const setup = game.history.getRootNode().acquireSetup();
+                setup.setTurnChange(oldTurn, newTurn);
+                game.board.setTurn(newTurn);
+            }
+        }
         if(prisoners){
             game.board.addPrisoners(BLACK, prisoners[0]);
             game.board.addPrisoners(WHITE, prisoners[1]);
@@ -2430,6 +2461,9 @@ function createGameFromQuery(){
         if(ko){
             game.board.setKoPos(game.board.toPosition(ko.x, ko.y));
         }
+    }
+    if(path){
+        game.redoByQuery(path);
     }
     return game;
 }
