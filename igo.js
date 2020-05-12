@@ -1854,6 +1854,84 @@ class HistoryTreeBase64Formatter extends HistoryTreeFormatter{
     }
 }
 
+class HistoryTreeHumanReadableFormatter extends HistoryTreeFormatter{
+    constructor(board){
+        super();
+
+        this.str = "";
+        this.board = board;
+    }
+
+    putPos(pos){
+        this.str += toSGFPoint(pos, this.board);
+    }
+    putCmd(cmd){
+        switch(cmd){
+        case HTS_CMD_PASS: this.str += "-P"; break;
+        case HTS_CMD_BEGIN_BRANCH: this.str += "-B"; break;
+        case HTS_CMD_END_BRANCH: this.str += "."; break;
+        }
+    }
+    putSubCmd(subcmd){
+        switch(subcmd){
+        case HTS_SUBCMD_RESIGN: this.str += "-R"; break;
+        case HTS_SUBCMD_SETUP: this.str += "-S"; break;
+        }
+    }
+
+    // override
+
+    toString(){
+        return this.str;
+    }
+
+    beginTree(turn){}//ルートのbeginBranch()は省略。
+    endTree(turn){this.endBranch(turn);}//終端のために必要
+    putPlace(pos, turn){this.str += "_"; this.putPos(pos);}
+    putPass(turn){this.putCmd(HTS_CMD_PASS);}
+    putResign(turn){this.putSubCmd(HTS_SUBCMD_RESIGN);}
+    beginBranch(node, turn){this.putCmd(HTS_CMD_BEGIN_BRANCH);}
+    endBranch(node, turn){this.putCmd(HTS_CMD_END_BRANCH);}
+
+    putSetupProperty(setup, turn){
+        this.putSubCmd(HTS_SUBCMD_SETUP);
+        if(setup.intersections){
+            this.str += "I";
+            // 色別、点・矩形別に分類する。
+            const states = [
+                {points:[], rects:[]}, //EMPTY
+                {points:[], rects:[]}, //BLACK
+                {points:[], rects:[]}]; //WHITE
+            for(const change of setup.getCompressedIntersectionChanges(this.board)){
+                const stateIndex = getIndexOfEmptyBlackWhite(change.state);
+                if(change.left == change.right && change.top == change.bottom){
+                    states[stateIndex].points.push(change);
+                }
+                else{
+                    states[stateIndex].rects.push(change);
+                }
+            }
+            // 色別、点・矩形別に出力する。
+            for(let si = 0; si < 3; ++si){
+                for(let change of states[si].points){
+                    this.putPos(this.board.toPosition(change.left, change.top));
+                }
+                this.str += ".";
+                for(let change of states[si].rects){
+                    this.putPos(this.board.toPosition(change.left, change.top));
+                    this.putPos(this.board.toPosition(change.right, change.bottom));
+                }
+                this.str += ".";
+            }
+        }
+        if(setup.turn && setup.turn.newTurn != turn){
+            this.str += "T";
+            this.str += setup.turn.newTurn == BLACK ? "B" : "W";
+        }
+        this.str += "--";
+    }
+}
+
 class HistoryTreeSGFFormatter extends HistoryTreeFormatter {
     constructor(board){
         super();
@@ -2060,6 +2138,9 @@ class HistoryTreeString {
     static toBase64(game, opt){
         return HistoryTreeString.toString(game, opt, new HistoryTreeBase64Formatter(game.board));
     }
+    static toHumanReadable(game, opt){
+        return HistoryTreeString.toString(game, opt, new HistoryTreeHumanReadableFormatter(game.board));
+    }
     static toSGF(game, opt){
         return HistoryTreeString.toString(game, opt, new HistoryTreeSGFFormatter(game.board));
     }
@@ -2174,6 +2255,115 @@ class HistoryTreeString {
                 const oldTurn = game.getTurn();
                 setup.setTurnChange(oldTurn, newTurn);
                 game.setTurnForced(newTurn);
+            }
+        }
+    }
+
+    static fromHumanReadable(str, w, h){
+        let strIndex = 0;
+        function scan(){return str[strIndex];}
+        function get(){return str[strIndex++];}
+        function readPos() {
+            const c1 = get();
+            const c2 = get();
+            return parseSGFPoint(c1 + c2, w, h);
+        }
+
+        const game = new Game(w, h);
+        const board = game.board;
+
+        const nodeStack = [];
+        for(;;){
+            const prefix = get();
+            if(prefix == "_"){
+                const pos = readPos();
+                if(!game.putStone(pos)){
+                    console.log("illegal move " + pos);
+                    return null; //illegal move
+                }
+            }
+            else if(prefix == "-"){
+                const cmd = get();
+                switch(cmd){
+                case "P": game.pass(); break;
+                case "B": nodeStack.push(game.history.getCurrentNode()); break; // begin branch
+                case "R": game.resign(); break;
+                case "S": procSetup(); break;
+                default: return null;
+                }
+            }
+            else if(prefix == "."){
+                // end branch
+                if(nodeStack.length == 0){
+                    game.history.undoAll(board, game);
+                    return game; //end of tree
+                }
+                else{
+                    game.history.undoTo(nodeStack.pop(), board, game);
+                }
+            }
+        }
+        return game;
+
+        function procSetup(){
+            // Add new empty node
+            if(! (game.history.getCurrentNode().isRoot() && nodeStack.length == 0)){
+                game.history.pushSetupNode(board.koPos); ///@todo keep koPos? or not?
+            }
+            // Add setup property
+            const setup = game.history.getCurrentNode().acquireSetup();
+            // setup intersections
+            if(scan() == "I"){
+                get();
+                const states = [EMPTY, BLACK, WHITE];
+                for(let si = 0; si < 3; ++si){
+                    const newState = states[si];
+                    // points
+                    for(;;){
+                        if(scan() == "." || scan() == ""){
+                            get();
+                            break;
+                        }
+                        const pos = readPos();
+                        if(board.isValidPosition(pos)){
+                            const oldState = board.getAt(pos);
+                            setup.addIntersectionChange(pos, oldState, newState);
+                            game.setIntersectionStateForced(pos, newState);
+                        }
+                    }
+                    // rectangles
+                    for(;;){
+                        if(scan() == "." || scan() == ""){
+                            get();
+                            break;
+                        }
+                        const posLeftTop = readPos();
+                        const posRightBottom = readPos();
+                        const left = board.toX(posLeftTop);
+                        const top = board.toY(posLeftTop);
+                        const right = board.toX(posRightBottom);
+                        const bottom = board.toY(posRightBottom);
+                        for(let y = top; y <= bottom; ++y){
+                            for(let x = left; x <= right; ++x){
+                                const pos = board.toPosition(x, y);
+                                const oldState = board.getAt(pos);
+                                setup.addIntersectionChange(pos, oldState, newState);
+                                game.setIntersectionStateForced(pos, newState);
+                            }
+                        }
+                    }
+                }
+            }
+            // setup turn
+            if(scan() == "T"){
+                get();
+                const newTurn = get() == "B" ? BLACK : WHITE;
+                const oldTurn = game.getTurn();
+                setup.setTurnChange(oldTurn, newTurn);
+                game.setTurnForced(newTurn);
+            }
+            if(get() != "-" || get() != "-"){
+                throw new Error("setup node not terminated");
             }
         }
     }

@@ -243,9 +243,14 @@ function createRadioButtons(name, items, onChange, parent){
             item.checked = true;
         }
     }
+    function getValue(){
+        const checkedInput = inputs.find(i=>i.checked);
+        return checkedInput ? checkedInput.value : null;
+    }
     labels.radio = {
         getByValue,
-        selectByValue
+        selectByValue,
+        getValue
     };
     return labels;
 }
@@ -843,8 +848,8 @@ class GameView{
             {text:"初期化", handler:()=>this.openResetDialog(), visible:this.editable},
             {text:"SGFインポート", handler:()=>this.importSGF(), visible:this.editable},
             {text:"SGFエクスポート", handler:()=>this.exportSGF()},
+            {text:"URL共有", handler:()=>this.openShareDialog()},
             {text:"対局情報", handler:()=>this.openGameInfo()},
-            {text:"共有", handler:()=>this.openShareDialog()},
             {text:"フリー編集", handler:()=>this.startFreeEditMode(), visible:this.editable},
             {text:"マーク編集", handler:()=>this.startMarkEditMode(), visible:this.editable},
         ]);
@@ -1705,6 +1710,8 @@ class GameView{
     }
 
     openShareDialog(){
+        let humanReadable = false;
+        let selectedValue = "board";
         let anchor;
         const dialog = createDialogWindow({}, [
             "共有",
@@ -1722,25 +1729,33 @@ class GameView{
                 anchor = createElement("a", {target:"_blank"})
             ]),
             createElement("div", {"class":"igo-control-bar"}, [
+                createCheckbox("できるだけ人が読めるようにする", false, e=>{
+                    humanReadable = e.target.checked;
+                    updateURL();
+                })
+            ]),
+            createElement("div", {"class":"igo-control-bar"}, [
                 createButton("Close", e=>{dialog.close();})
             ])
         ]);
 
         const game = this.model;
-        updateURL(createBoardQueryURL(game.board));
-        function updateURL(url){
+        function updateURL(){
+            let url;
+            switch(selectedValue){
+            case "board": url = createBoardQueryURL(game.board, humanReadable); break;
+            case "moves": url = createTreeQueryURL(game, {humanReadable, toCurrentNode:true}); break;
+            case "tree": url = createTreeQueryURL(game, {humanReadable}); break;
+            case "tree-after": url = createTreeQueryURL(game, {humanReadable, fromCurrentNode:true}); break;
+            }
             anchor.href = url;
             anchor.innerText = url;
         }
-
         function onMethodChanged(value){
-            switch(value){
-            case "board": updateURL(createBoardQueryURL(game.board)); break;
-            case "moves": updateURL(createTreeQueryURL(game, {toCurrentNode:true})); break;
-            case "tree": updateURL(createTreeQueryURL(game)); break;
-            case "tree-after": updateURL(createTreeQueryURL(game, {fromCurrentNode:true})); break;
-            }
+            selectedValue = value;
+            updateURL();
         }
+        updateURL();
     }
 
 
@@ -2288,11 +2303,11 @@ igo.GameView = GameView;
 // Query String
 //
 
-function createBoardQueryURL(board){
+function createBoardQueryURL(board, humanReadable){
     const params = new URLSearchParams();
     params.append(
         "board", "" + board.w + (board.w != board.h ? "x" + board.h : "") +
-            "_" + igo.BoardStringizer.to20Per32bits(board));
+            "_" + (humanReadable ? igo.BoardStringizer.toHumanReadable(board) : igo.BoardStringizer.to20Per32bits(board)));
     if(board.getTurn() == WHITE){
         params.append("turn", "W");
     }
@@ -2313,6 +2328,7 @@ function createBoardQueryURL(board){
     return url.toString();
 }
 
+const HUMAN_READABLE_TREE_PREFIX = ".H";
 function createTreeQueryURL(game, opt){
     const params = new URLSearchParams();
 
@@ -2320,7 +2336,9 @@ function createTreeQueryURL(game, opt){
     const h = game.board.h;
 
     params.append("board", "" + w + (w != h ? "x" + h : ""));
-    params.append("tree", igo.HistoryTreeString.toBase64(game, opt));
+    params.append("tree", opt.humanReadable ?
+                  HUMAN_READABLE_TREE_PREFIX + igo.HistoryTreeString.toHumanReadable(game, opt) :
+                  igo.HistoryTreeString.toBase64(game, opt));
 
     // 現在の盤面を開くためのパスを求める。
     if(opt && opt.toCurrentNode){
@@ -2409,9 +2427,7 @@ function createGameFromQuery(){
             }
             break;
         case "tree":
-            if(/^[A-Za-z0-9+/_\-]+[=.]*$/.test(value)){
-                tree = value;
-            }
+            tree = value;
             break;
         case "path":
             path = value.split(/ *[,_\- ] */).reduce((acc, curr)=>{
@@ -2428,7 +2444,10 @@ function createGameFromQuery(){
     }
 
     let game;
-    if(tree){
+    if(tree && new RegExp("^" + HUMAN_READABLE_TREE_PREFIX + "[A-Za-z0-9._\\-]*$").test(tree)){
+        game = igo.HistoryTreeString.fromHumanReadable(tree.substring(HUMAN_READABLE_TREE_PREFIX.length), w, h);
+    }
+    else if(tree && /^[A-Za-z0-9+/_\-]+[=.]*$/.test(tree)){
         game = igo.HistoryTreeString.fromBase64(tree, w, h);
     }
     else{
