@@ -737,7 +737,7 @@ class GameView{
                 ]),
 
             // Bottom Bar
-            this.bottomBar = createElement("div", {"class":"igo-bottom-bar"}, [])
+            this.bottomBar = createElement("div", {"class":"igo-bottom-bar", style:"padding: 1px 0;"}, [])
         ]);
 
         // Init UI
