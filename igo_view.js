@@ -622,16 +622,27 @@ class BoardElement{
         this.updateWidthHeightViewBox();
     }
     setScroll(x, y, scale){
-        this.scrollScale = Math.max(1.0, scale);
-        this.scrollX = x;
-        this.scrollY = y;
-        this.clampScrollPosition();
-        this.updateWidthHeightViewBox();
+        x = this.clampScrollX(x);
+        y = this.clampScrollX(y);
+        scale = clamp(scale, 1.0, 10.0);
+        if(x != this.scrollX || y != this.scrollY || scale != this.scrollScale){
+            this.scrollScale = scale;
+            this.scrollX = x;
+            this.scrollY = y;
+            this.clampScrollPosition();
+            this.updateWidthHeightViewBox();
+            return true;
+        }
+        else{
+            return false;
+        }
     }
+    clampScrollX(x){return clamp(x,this.getScrollXMin(),this.getScrollXMax());}
+    clampScrollY(y){return clamp(y,this.getScrollYMin(),this.getScrollYMax());}
     clampScrollPosition() {
         // 盤面(viewArea)外が見えないようにスクロール位置を制限する。
-        this.scrollX = clamp(this.scrollX, this.getScrollXMin(), this.getScrollXMax());
-        this.scrollY = clamp(this.scrollY, this.getScrollYMin(), this.getScrollYMax());
+        this.scrollX = this.clampScrollX(this.scrollX);
+        this.scrollY = this.clampScrollY(this.scrollY);
     }
     getScrollXMin(){ return 0;}
     getScrollYMin(){ return 0;}
@@ -1392,13 +1403,15 @@ class GameView{
                 const dy = currPos.center.y - startPos.center.y;
                 const dr = startPos.radius == 0 ? 1.0 : currPos.radius / startPos.radius;
 
-                boardElement.setScroll(
+                const changed = boardElement.setScroll(
                     startPos.scroll.x - dx - (startPos.scroll.x + currPos.center.x) * (1 - dr),
                     startPos.scroll.y - dy - (startPos.scroll.y + currPos.center.y) * (1 - dr),
                     startPos.scale * dr);
-                startPos.moved = true;
-                e.preventDefault();
-                e.stopPropagation();
+                if(changed){
+                    startPos.moved = true;
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
             }
         }
         function onTouchEnd(e){
