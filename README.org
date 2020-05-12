@@ -25,8 +25,7 @@ Github Pagesに置いてあります。
 - 盤面のピンチ・スワイプ操作による拡大・スクロール
 - ウェブページへの埋め込み対応 (詰碁、棋譜の表示)
 - 自動再生機能
-- 現在盤面のURL共有機能
-- 一本道手順のURL共有機能
+- 現在盤面や手順のURL共有機能
 
 SGFは次のプロパティに対応しています。
 - ルートノードでの盤面サイズ指定(SZ)(非正方形サイズ可能)
@@ -71,23 +70,53 @@ gameView.fitBoardSizeToWindowAndParent();
 - undefined : /game/ を省略した場合は =new igo.Game(9)= と同じになります
 
 /options/ はGameViewの動作をカスタマイズするための様々なオプションを保持するオブジェクトです。
+詳しくは[[*GameViewのオプション][GameViewのオプション]]を参照してください。
 
-| プロパティ               | 説明                                                 | 指定可能な値                                                   | デフォルト                                                                |
-|--------------------------+------------------------------------------------------+----------------------------------------------------------------+---------------------------------------------------------------------------|
-| editable                 | 編集可能か                                           | boolean                                                        | true                                                                      |
-| showBranches             | 盤面に分岐を文字で表示するか                         | boolean                                                        | false                                                                     |
-| showMoveNumber           | 石の上に着手番号を表示するか                         | boolean                                                        | false                                                                     |
-| showLastMoveMark         | 最後に置いた石にマークを表示するか                   | boolean                                                        | false                                                                     |
-| rotate180                | 盤面を180度回転させるか(白から見た図にするか)        | boolean                                                        | false                                                                     |
-| preventRedoAtBranchPoint | 分岐点でリドゥを禁止するか(必ず着手点を選択させるか) | boolean                                                        | false                                                                     |
-| autoMove                 | 自動着手モード                                       | igo.BLACK, igo.WHITE, true, false                              | false                                                                     |
-| showComment              | コメント欄を表示するか                               | boolean                                                        | false                                                                     |
-| path                     | 最初に表示するノード                                 | number(手数), string(SGF座標), Array(numberまたはstringの配列) | ルートを表示                                                              |
-| gridInterval             | 盤面の線の間隔(px)                                   | number                                                         |                                                                           |
-| gridMargin               | 盤面の格子の外の空き(px)                             | number                                                         |                                                                           |
-| ui                       | UI要素の配置                                         | object                                                         | {top:["GameStatus"], bottom:["MoveControl", "HistoryControl", "ViewControl", "Comment"]} |
+** HTMLで埋め込む方法
 
-** options.path
+埋め込む場所に毎回script要素を書きたくない場合は、次のようにdiv要素にdata属性を設定しておいて
+
+#+begin_src html
+<div data-igo-sgf="(;GM[1]SZ[9]VW[da:id]AW[ea]AB[fa]AW[eb]AB[fb:ib]AW[ec:ic])"
+     data-igo-opt='{"ui":{"top":["Comment"],"bottom":["UndoRedo"]},"showComment":true}'>
+</div>
+#+end_src
+
+headあたりに次のようなスクリプトを仕込んでおけば良いでしょう。
+
+#+begin_src js
+window.addEventListener("load", ev=>{
+    for(elem of document.querySelectorAll("div[data-igo-sgf]")){
+        new igo.GameView(
+            elem,
+            elem.dataset.igoSgf,
+            JSON.parse(elem.dataset.igoOpt));
+    }
+});
+#+end_src
+
+ページが読み込み終わったときにdata-igo-sgf属性を持つ全てのdivにGameViewを追加します。
+
+* リファレンス
+** GameView
+*** GameViewのオプション
+
+| プロパティ               | 説明                                                 | 指定可能な値                                                             | デフォルト                                                                               |
+|--------------------------+------------------------------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------------------------------------|
+| editable                 | 編集可能か                                           | boolean                                                                  | true                                                                                     |
+| showBranches             | 盤面に分岐を文字で表示するか                         | boolean                                                                  | false                                                                                    |
+| showMoveNumber           | 石の上に着手番号を表示するか                         | boolean                                                                  | false                                                                                    |
+| showLastMoveMark         | 最後に置いた石にマークを表示するか                   | boolean                                                                  | false                                                                                    |
+| rotate180                | 盤面を180度回転させるか(白から見た図にするか)        | boolean                                                                  | false                                                                                    |
+| preventRedoAtBranchPoint | 分岐点でリドゥを禁止するか(必ず着手点を選択させるか) | boolean                                                                  | false                                                                                    |
+| autoMove                 | 自動着手モード                                       | igo.BLACK, igo.WHITE, true, false                                        | false                                                                                    |
+| showComment              | コメント欄を表示するか                               | boolean                                                                  | false                                                                                    |
+| [[*options.path][path]]                     | 最初に表示するノード                                 | number(手数), string(SGF座標または分岐), Array(numberまたはstringの配列) | ルートを表示                                                                             |
+| gridInterval             | 盤面の線の間隔(px)                                   | number                                                                   |                                                                                          |
+| gridMargin               | 盤面の格子の外の空き(px)                             | number                                                                   |                                                                                          |
+| [[*options.ui][ui]]                       | UI要素の配置                                         | object                                                                   | {top:["GameStatus"], bottom:["MoveControl", "HistoryControl", "ViewControl", "Comment"]} |
+
+**** options.path
 
 options.pathは最初に表示する盤面を指定します。
 
@@ -107,7 +136,7 @@ options.pathは最初に表示する盤面を指定します。
 - ["cc", 2] : 三々に着手した後の2手目
 - ["A", "B", "A"] : 分岐をA、B、Aの順に選択した盤面
 
-** options.ui
+**** options.ui
 
 options.uiはUI要素(ボタン類)の配置を指定します。
 

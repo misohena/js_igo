@@ -90,5 +90,23 @@
       new igo.GameView(document.currentScript, new igo.Game(19));
       </script>
     </section>
+    <section>
+      <h2>data属性テスト</h2>
+      <p>divにdata属性を設定しておいて後から碁盤に変換することもできます。</p>
+
+      <script>
+      window.addEventListener("load", ev=>{
+          for(elem of document.querySelectorAll("div[data-igo-sgf]")){
+              new igo.GameView(
+                  elem,
+                  elem.dataset.igoSgf,
+                  JSON.parse(elem.dataset.igoOpt));
+          }
+      });
+      </script>
+
+      <div data-igo-sgf="(;GM[1]SZ[9]VW[da:id]C[黒番です。さあどこに打ちますか？]AW[ea]AB[fa]AW[eb]AB[fb:ib]AW[ec:ic](;B[ga];W[ha];B[ia];W[ha]C[全部取られちゃった！])(;B[ha]C[白はもう打てません。成功！])(;B[ia];W[ga];B[ha];W[ga]C[全部取られちゃった！]))" data-igo-opt='{"ui":{"top":["Comment"],"bottom":["UndoRedo"]},"showComment":true}'>
+      </div>
+    </section>
   </body>
 </html>
