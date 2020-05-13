@@ -208,6 +208,7 @@ function createCheckbox(text, checked, onChange, parent){
     ], parent);
     checkbox.checked = checked;
     checkbox.addEventListener('change', onChange, false);
+    label.checkbox = checkbox;
     return label;
 }
 
@@ -721,6 +722,7 @@ class GameView{
         this.opt = opt = opt || {};
         this.editable = toBool(opt.editable, true);
             // Board Option
+            // see: backupSession(), restoreSession()
         this.showBranches = toBool(opt.showBranchText, false);
         this.showMoveNumber = toBool(opt.showMoveNumber, false);
         this.showLastMoveMark = toBool(opt.showLastMoveMark, false);
@@ -729,6 +731,7 @@ class GameView{
         this.preventRedoAtBranchPoint = toBool(opt.preventRedoAtBranchPoint, false);
         this.autoMove = opt.autoMove; //BLACK, WHITE, true, false
             // Comment Visibility
+            // see: backupSession(), restoreSession()
         this.showComment = toBool(opt.showComment, false);
 
         // Mode
@@ -845,6 +848,34 @@ class GameView{
         this.update();
 
         this.startMoveMode();
+    }
+
+    backupSession(){
+        // UI
+        const properties = ["showBranches", "showMoveNumber", "showLastMoveMark", "rotate180", "showComment"];
+        for(const propName of properties){
+            sessionStorage.setItem(propName, JSON.stringify(this[propName]));
+        }
+        // path
+        const path = this.model.history.getCurrentNode().getPathFromRoot(false).join(" ");
+        sessionStorage.setItem("path", path);
+    }
+    restoreSession(){
+        // UI
+        const properties = ["showBranches", "showMoveNumber", "showLastMoveMark", "rotate180", "showComment"];
+        for(const propName of properties){
+            const propValue = sessionStorage.getItem(propName);
+            if(propValue !== undefined){
+                this[propName] = JSON.parse(propValue);
+            }
+        }
+        // path
+        const pathStr = sessionStorage.getItem("path");
+        if(pathStr){
+            const dirs = pathStr.split(" ").map(s=>parseInt(s));
+            this.model.redoTo(this.model.history.getRootNode().findByPath(dirs, false));
+        }
+        this.update();
     }
 
 
@@ -1513,36 +1544,40 @@ class GameView{
         });
         return button;
     }
-    createToggleBranchText(updators){
-        return createCheckbox("分岐表示", this.showBranches, e=>{
-            this.showBranches = e.target.checked;
-            this.update();
+    createVisibilityToggleButton(updators, text, propName, onChange){
+        const label = createCheckbox(text, this[propName], e=>{
+            if(e.target.checked != this[propName]){
+                this[propName] = e.target.checked;
+                if(onChange){
+                    onChange();
+                }
+                this.update();
+            }
         });
+        updators.push(()=>{
+            if(this[propName] != label.checkbox.checked){
+                label.checkbox.checked = this[propName];
+            }
+        });
+        return label;
+    }
+    createToggleBranchText(updators){
+        return this.createVisibilityToggleButton(updators, "分岐表示", "showBranches");
     }
     createToggleMoveNumber(updators){
-        return createCheckbox("着手番号", this.showMoveNumber, e=>{
-            this.showMoveNumber = e.target.checked;
+        return this.createVisibilityToggleButton(updators, "着手番号", "showMoveNumber", ()=>{
             this.invalidAllIntersections();
-            this.update();
         });
     }
     createToggleLastMoveMark(updators){
-        return createCheckbox("最終着手", this.showLastMoveMark, e=>{
-            this.showLastMoveMark = e.target.checked;
-            this.update();
-        });
+        return this.createVisibilityToggleButton(updators, "最終着手", "showLastMoveMark");
     }
     createToggleComment(updators){
-        return createCheckbox("コメント", this.showComment, e=>{
-            this.showComment = e.target.checked;
-            this.update();
-        });
+        return this.createVisibilityToggleButton(updators, "コメント", "showComment");
     }
     createToggleRotate180(updators){
-        return createCheckbox("180度回転", this.rotate180, e=>{
-            this.rotate180 = e.target.checked;
+        return this.createVisibilityToggleButton(updators, "180度回転", "rotate180", ()=>{
             this.invalidAllIntersections();
-            this.update();
         });
     }
 
@@ -2457,12 +2492,7 @@ function createTreeQueryURL(game, opt){
         // 最初が現在の盤面なので不要
     }
     else{
-        const forks = [];
-        for(let node = game.history.getCurrentNode(); node && node.prev; node = node.prev){
-            if(node.prev.nexts.length >= 2){
-                forks.push(String.fromCharCode(0x41 + node.prev.nexts.indexOf(node)));
-            }
-        }
+        const forks = game.history.getCurrentNode().getPathFromRoot(true).map(dir=>String.fromCharCode(0x41 + dir));
         if(forks.length > 0){
             forks.reverse();
             params.append("path", forks.join("-"));

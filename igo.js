@@ -856,6 +856,16 @@ class HistoryNode{
         }
         return num;
     }
+    getPathFromRoot(forkOnly){
+        const dirs = [];
+        for(let node = this; node && node.prev; node = node.prev){
+            if(!forkOnly || node.prev.nexts.length >= 2){
+                dirs.push(node.prev.nexts.indexOf(node));
+            }
+        }
+        dirs.reverse();
+        return dirs;
+    }
 
     // Next Nodes
 
@@ -941,6 +951,17 @@ class HistoryNode{
             next = [];
         }
         return null;
+    }
+    findByPath(dirs, forkOnly){
+        let node = this, di = 0;
+        while(node && di < dirs.length){
+            const dir = !forkOnly || node.nexts.length >= 2 ? dirs[di++] : 0;
+            if(dir >= node.nexts.length){
+                return null;
+            }
+            node = node.nexts[dir];
+        }
+        return node;
     }
     findByQuery(queries, board){
         if(!(queries instanceof Array)){
@@ -1186,6 +1207,9 @@ class HistoryTree{
         return true;
     }
     redoTo(descendant, board, game){
+        if(!descendant){
+            return false;
+        }
         const from = this.pointer;
         if( ! descendant.isDescendantOf(from)){
             return false;

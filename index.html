@@ -28,10 +28,18 @@
   <body>
 
     <script>
-    var gameView = new igo.GameView(
+    const gameView =new igo.GameView(
         document.currentScript,
-        igo.createGameFromQuery()
-    );
+        sessionStorage.getItem("sgf") || igo.createGameFromQuery());
+
+    gameView.restoreSession();
+    function backupSession(){
+        ///@todo SGFは投了を記録出来ない。toBase64やtoHumanReadableはコメントやマークを記録出来ない。
+        sessionStorage.setItem("sgf", gameView.model.toSGF());
+        gameView.backupSession();
+    }
+
+    window.addEventListener("beforeunload", backupSession, false);
     </script>
   </body>
 </html>
