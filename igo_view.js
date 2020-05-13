@@ -1646,31 +1646,65 @@ class GameView{
     // SGF
 
     exportSGF(){
+        const now = new Date();
+        const filenameDefault =
+              now.getFullYear() +
+              ("0" + (now.getMonth() + 1)).slice(-2) +
+              ("0" + now.getDate()).slice(-2) + "_" +
+              ("0" + now.getHours()).slice(-2) +
+              ("0" + now.getMinutes()).slice(-2) +
+              ".sgf";
         const opt = {
             fromCurrentNode:false,
             toCurrentNode:false
         };
         const model = this.model;
+        let inputFilename;
+        let sgf;
         function update(){
-            textarea.value = model.toSGF(opt);
+            textarea.value = sgf = model.toSGF(opt);
             textarea.select();
         }
         const {dialog, textarea} = createTextDialog(
-            "Export SGF",
+            "SGFエクスポート",
             "",
-            createElement("div", {}, [
-                createCheckbox("現在の盤面から始まる棋譜を出力", false, e=>{
-                    opt.fromCurrentNode = e.target.checked;
-                    update();
-                }),
-                createElement("br"),
-                createCheckbox("現在の盤面までの棋譜を出力", false, e=>{
-                    opt.toCurrentNode = e.target.checked;
-                    update();
-                })
-            ])
+            [
+                createElement("div", {}, [
+                    createCheckbox("現在の盤面から始まる棋譜を出力", false, e=>{
+                        opt.fromCurrentNode = e.target.checked;
+                        update();
+                    }),
+                    createElement("br"),
+                    createCheckbox("現在の盤面までの棋譜を出力", false, e=>{
+                        opt.toCurrentNode = e.target.checked;
+                        update();
+                    })
+                ]),
+                createElement("div", {}, [
+                    createElement("label", {}, [
+                        "ファイル名:",
+                        inputFilename = createElement("input", {type:"text", value:filenameDefault}),
+                    ]),
+                    createButton("保存", e=>{
+                        saveTextFile(sgf, inputFilename.value);
+                    })
+                ])
+            ]
         );
         update();
+
+        function saveTextFile(text, filename){
+            const url = URL.createObjectURL(new Blob([text], {type:"text/plain"}));
+            const a = document.createElement("a");
+            a.innerHTML = "Download File";
+            a.download = filename;
+            a.href = url;
+            a.onclick = e=>{a.parentNode.removeChild(a);};
+            a.style.display = "none";
+            document.body.appendChild(a);
+            a.click();
+            URL.revokeObjectURL(url); //when?
+        }
     }
     importSGF(){
         const CHAR_ENCODINGS = [
