@@ -561,7 +561,8 @@ class BoardElement{
             style:
                 "font-weight:bold;"+
                 "font-family:arial;"+
-                "font-size:" + fontSize +"px;",
+                "font-size:" + fontSize +"px;"+
+                "user-select:none;",
             "text-anchor": "middle",
             "alignment-baseline": "central"
         }, [text]);
