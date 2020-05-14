@@ -175,7 +175,10 @@ function createTextDialog(message, text, children, onOk, parent){
                    "width:40em;"+
                    "height:4em;"}),
         children,
-        createElement("div", {"class":"igo-control-bar", style:"text-align:right"},
+        createElement(
+            "div", {"class":"igo-control-bar", style:"text-align:right"},
+            onOk instanceof Array ? onOk :
+            typeof(onOk) == "string" ? createButton(onOk, close) :
             onOk ? [
                 createButton("OK", ()=>{close(); onOk();}),
                 createButton("Cancel", close)
@@ -715,6 +718,7 @@ class GameView{
             game = Game.fromSGF(game);
         }
 
+        this.filename = null;
         // Options
         function toBool(v, defaultValue){
             return v !== undefined ? v : defaultValue;
@@ -875,6 +879,8 @@ class GameView{
             const dirs = pathStr.split(" ").map(s=>parseInt(s));
             this.model.redoTo(this.model.history.getRootNode().findByPath(dirs, false));
         }
+        // filename (export dialog)
+        this.filename = sessionStorage.getItem("filename");
         this.update();
     }
 
@@ -1683,7 +1689,7 @@ class GameView{
 
     exportSGF(){
         const now = new Date();
-        const filenameDefault =
+        const filenameDefault = this.filename ? this.filename :
               now.getFullYear() +
               ("0" + (now.getMonth() + 1)).slice(-2) +
               ("0" + now.getDate()).slice(-2) + "_" +
@@ -1715,16 +1721,20 @@ class GameView{
                         opt.toCurrentNode = e.target.checked;
                         update();
                     })
-                ]),
-                createElement("div", {}, [
-                    createElement("label", {}, [
-                        "ファイル名:",
-                        inputFilename = createElement("input", {type:"text", value:filenameDefault}),
-                    ]),
-                    createButton("保存", e=>{
-                        saveTextFile(sgf, inputFilename.value);
-                    })
                 ])
+            ],
+            [
+                createElement("label", {}, [
+                    "ファイル名:",
+                    inputFilename = createElement("input", {type:"text", value:filenameDefault}),
+                ]),
+                createButton("保存", e=>{
+                    this.filename = inputFilename.value;
+                    saveTextFile(sgf, inputFilename.value);
+                }),
+                createButton("閉じる", e=>{
+                    dialog.close();
+                })
             ]
         );
         update();
@@ -1782,8 +1792,10 @@ class GameView{
             });
 
         // input file
+        const gameView = this;
         function loadText(file){
             if(file){
+                gameView.filename = file.name;
                 const reader = new FileReader();
                 reader.onload = ()=>{
                     textarea.value = reader.result;
