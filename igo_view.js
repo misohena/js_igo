@@ -622,14 +622,20 @@ class BoardElement{
 
     // Viewport
 
+    getElementScale(){
+        return this.elementScale;
+    }
     setElementScale(scale){
         this.elementScale = scale;
         this.updateWidthHeightViewBox();
     }
+    getScrollScale(){
+        return this.scrollScale;
+    }
     setScroll(x, y, scale){
         x = this.clampScrollX(x);
         y = this.clampScrollX(y);
-        scale = clamp(scale, 1.0, 10.0);
+        scale = this.clampScrollScale(scale);
         if(x != this.scrollX || y != this.scrollY || scale != this.scrollScale){
             this.scrollScale = scale;
             this.scrollX = x;
@@ -644,6 +650,7 @@ class BoardElement{
     }
     clampScrollX(x){return clamp(x,this.getScrollXMin(),this.getScrollXMax());}
     clampScrollY(y){return clamp(y,this.getScrollYMin(),this.getScrollYMax());}
+    clampScrollScale(scale){return clamp(scale, 1.0, 10.0);}
     clampScrollPosition() {
         // 盤面(viewArea)外が見えないようにスクロール位置を制限する。
         this.scrollX = this.clampScrollX(this.scrollX);
@@ -830,6 +837,7 @@ class GameView{
             gridInterval: this.opt.gridInterval,
             gridMargin: this.opt.gridMargin,
         });
+        this.maxBoardElementScale = 1.0;
         boardElement.element.style.verticalAlign = "top";
         this.boardWrapperBack.appendChild(boardElement.element);
 
@@ -1359,15 +1367,24 @@ class GameView{
         const wrapperRect = this.boardWrapperRow.getBoundingClientRect();
         const wrapperW = wrapperRect.right-wrapperRect.left;
 
-        // max board size
+        // max board size & scale
         const maxBoardW = wrapperW > 10 ? Math.min(windowW, wrapperW) : windowW; //ウィンドウの幅か、包含divの幅
         const maxBoardH = Math.max(windowH/3, windowH-mainUIHeight); //ウィンドウの1/3か、UIの高さを除いた高さ
+        const maxBoardSclaeX = maxBoardW / this.boardElement.viewArea.width;
+        const maxBoardScaleY = maxBoardH / this.boardElement.viewArea.height;
+        const maxBoardScale = Math.min(maxBoardSclaeX, maxBoardScaleY);
+        this.maxBoardElementScale = maxBoardScale;
 
         // element size
-        const elementScaleX = Math.min(1, maxBoardW / this.boardElement.viewArea.width);
-        const elementScaleY = Math.min(1, maxBoardH / this.boardElement.viewArea.height);
-        const elementScale = Math.min(elementScaleX, elementScaleY);
-        this.boardElement.setElementScale(elementScale);
+        if(maxBoardScale <= 1){
+            // 縮小が必要なときは変化の余地無し。
+            this.boardElement.setElementScale(maxBoardScale);
+        }
+        else{
+            // 拡大の余地がある場合は、1.0～maxBoardScaleの間。
+            const currentScale = this.boardElement.getElementScale();
+            this.boardElement.setElementScale(clamp(currentScale, 1.0, maxBoardScale));
+        }
     }
     onBarHeightChanged(){
         this.fitBoardSizeToWindowAndParent();
@@ -1391,6 +1408,7 @@ class GameView{
         this.boardWrapperBack.addEventListener("touchend", onTouchEnd, false);
         this.boardWrapperBack.addEventListener("touchcancel", onTouchCancel, false);
 
+        const gameView = this;
         const boardElement = this.boardElement;
         let startPos = null;
 
@@ -1423,7 +1441,8 @@ class GameView{
                 center,
                 radius,
                 scroll: {x:boardElement.scrollX, y:boardElement.scrollY},
-                scale: boardElement.scrollScale,
+                scrollScale: boardElement.getScrollScale(),
+                elementScale: boardElement.getElementScale(),
                 numTouches: e.touches.length,
                 moved: false
             };
@@ -1439,12 +1458,47 @@ class GameView{
             if(startPos && currPos){
                 const dx = currPos.center.x - startPos.center.x;
                 const dy = currPos.center.y - startPos.center.y;
-                const dr = startPos.radius == 0 ? 1.0 : currPos.radius / startPos.radius;
+                let dr = startPos.radius == 0 ? 1.0 : currPos.radius / startPos.radius;
 
-                const changed = boardElement.setScroll(
+                let changed = false;
+
+                let newElementScale;
+                let newScrollScale;
+                const maxElementScale = gameView.maxBoardElementScale;
+                if(maxElementScale > 1.0){
+                    // 要素を拡大する余地がある場合
+                    if(dr >= 1.0){
+                        // ピンチアウトの場合はまず要素を拡大し、それが最大まで拡大したら中身を拡大する。
+                        newElementScale = clamp(startPos.elementScale * dr, 1.0, maxElementScale);
+                        dr = dr / (newElementScale / startPos.elementScale);
+                        newScrollScale = startPos.scrollScale * dr;
+                    }
+                    else{
+                        // ピンチインの場合はまず中身を縮小し、それが最小まで縮小したら要素を縮小する。
+                        newScrollScale = boardElement.clampScrollScale(startPos.scrollScale * dr);
+                        dr = dr / (newScrollScale / startPos.scrollScale);
+                        newElementScale = clamp(startPos.elementScale * dr, 1.0, maxElementScale);
+                    }
+                }
+                else{
+                    // 要素を拡大する余地がない場合
+                    newElementScale = maxElementScale;
+                    newScrollScale = boardElement.clampScrollScale(startPos.scrollScale * dr);
+                }
+
+                // apply element scale
+                if(newElementScale != boardElement.getElementScale()){
+                    boardElement.setElementScale(newElementScale);
+                    changed = true;
+                }
+                // apply scroll scale
+                if(boardElement.setScroll(
                     startPos.scroll.x - dx - (startPos.scroll.x + currPos.center.x) * (1 - dr),
                     startPos.scroll.y - dy - (startPos.scroll.y + currPos.center.y) * (1 - dr),
-                    startPos.scale * dr);
+                    newScrollScale)){
+                    changed = true;
+                }
+
                 if(changed){
                     startPos.moved = true;
                     e.preventDefault();
