@@ -2016,8 +2016,23 @@ class GameView{
                 case "click":
                     e.stopPropagation();
                     if( ! gameView.model.board.isEmpty(pos)){
+                        const currNode = gameView.model.history.getCurrentNode();
+
                         createPopupMenu(e.clientX, e.clientY, [
-                            {text:"この手まで戻る", handler:()=>gameView.backToMove(pos)}
+                            {text:"この手まで戻る", handler:()=>gameView.backToMove(pos), visible:currNode.pos != pos},
+                            {
+                                text:currNode.nexts.length > 0 ? "この手以降を削除" : "この手を削除",
+                                handler:()=>{
+                                    gameView.model.backToMove(pos);
+                                    const node = gameView.model.history.getCurrentNode();
+                                    if(node.pos == pos){
+                                        gameView.model.undo();
+                                    }
+                                    gameView.model.history.deleteBranch(node);
+                                    gameView.update();
+                                },
+                                visible:currNode.pos == pos
+                            }
                         ]);
                     }
                     break;
