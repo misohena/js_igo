@@ -1433,33 +1433,29 @@ class GameView{
                     acc += Math.sqrt(dx*dx+dy*dy);
                     return acc;
                 }, 0) / e.touches.length;
-            // inverse element scaling
-            center.x = center.x / boardElement.elementScale;
-            center.y = center.y / boardElement.elementScale;
-            radius = radius / boardElement.elementScale;
-            return {
-                center,
-                radius,
-                scroll: {x:boardElement.scrollX, y:boardElement.scrollY},
-                scrollScale: boardElement.getScrollScale(),
-                elementScale: boardElement.getElementScale(),
-                numTouches: e.touches.length,
-                moved: false
-            };
+            return {center, radius};
         }
 
+        function resetStartPos(e){
+            startPos = calculateCenterRadius(e);
+            if(startPos){
+                startPos.scroll = {
+                    x:boardElement.scrollX,
+                    y:boardElement.scrollY};
+                startPos.scrollScale = boardElement.getScrollScale();
+                startPos.elementScale = boardElement.getElementScale();
+                startPos.moved = false;
+            }
+        }
         function onTouchStart(e){
             // do not prevent default click event
             //e.preventDefault();
-            startPos = calculateCenterRadius(e);
+            resetStartPos(e);
         }
         function onTouchMove(e){
             const currPos = calculateCenterRadius(e);
             if(startPos && currPos){
-                const dx = currPos.center.x - startPos.center.x;
-                const dy = currPos.center.y - startPos.center.y;
                 let dr = startPos.radius == 0 ? 1.0 : currPos.radius / startPos.radius;
-
                 let changed = false;
 
                 let newElementScale;
@@ -1470,14 +1466,24 @@ class GameView{
                     if(dr >= 1.0){
                         // ピンチアウトの場合はまず要素を拡大し、それが最大まで拡大したら中身を拡大する。
                         newElementScale = clamp(startPos.elementScale * dr, 1.0, maxElementScale);
-                        dr = dr / (newElementScale / startPos.elementScale);
-                        newScrollScale = startPos.scrollScale * dr;
+                        if(newElementScale == startPos.elementScale){
+                            dr = dr / (newElementScale / startPos.elementScale);
+                            newScrollScale = startPos.scrollScale * dr;
+                        }
+                        else{
+                            newScrollScale = startPos.scrollScale;
+                        }
                     }
                     else{
                         // ピンチインの場合はまず中身を縮小し、それが最小まで縮小したら要素を縮小する。
                         newScrollScale = boardElement.clampScrollScale(startPos.scrollScale * dr);
-                        dr = dr / (newScrollScale / startPos.scrollScale);
-                        newElementScale = clamp(startPos.elementScale * dr, 1.0, maxElementScale);
+                        if(newScrollScale == startPos.scrollScale){
+                            dr = dr / (newScrollScale / startPos.scrollScale);
+                            newElementScale = clamp(startPos.elementScale * dr, 1.0, maxElementScale);
+                        }
+                        else{
+                            newElementScale = startPos.elementScale;
+                        }
                     }
                 }
                 else{
@@ -1492,14 +1498,16 @@ class GameView{
                     changed = true;
                 }
                 // apply scroll scale
+                const dx = (currPos.center.x - startPos.center.x) / newElementScale;
+                const dy = (currPos.center.y - startPos.center.y) / newElementScale;
                 if(boardElement.setScroll(
-                    startPos.scroll.x - dx - (startPos.scroll.x + currPos.center.x) * (1 - dr),
-                    startPos.scroll.y - dy - (startPos.scroll.y + currPos.center.y) * (1 - dr),
+                    startPos.scroll.x - dx - (startPos.scroll.x + currPos.center.x / newElementScale) * (1 - dr),
+                    startPos.scroll.y - dy - (startPos.scroll.y + currPos.center.y / newElementScale) * (1 - dr),
                     newScrollScale)){
                     changed = true;
                 }
 
-                if(changed){
+                if(changed || startPos.moved){
                     startPos.moved = true;
                     e.preventDefault();
                     e.stopPropagation();
@@ -1510,10 +1518,10 @@ class GameView{
             if(startPos && startPos.moved){
                 e.preventDefault();
             }
-            startPos = calculateCenterRadius(e);
+            resetStartPos(e);
         }
         function onTouchCancel(e){
-            startPos = calculateCenterRadius(e);
+            resetStartPos(e);
         }
     }
 
