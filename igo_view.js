@@ -259,6 +259,31 @@ function createRadioButtons(name, items, onChange, parent){
     return labels;
 }
 
+function showMessage(text, element){
+    const bcr = element.getBoundingClientRect();
+    const maxWidth = bcr.right - bcr.left;
+    const left = window.scrollX + bcr.left;
+    const top = window.scrollY + bcr.top;
+    const div = createElement("div", {
+        style:"position:absolute;"+
+            "left:"+left+"px;"+
+            "top:"+top+"px;"+
+            "box-sizing:border-box;"+
+            "max-width:"+ maxWidth + "px;"+
+            "padding:1em 2em;"+
+            "background:rgba(255,255,255,0.75);"+
+            "border: 1px solid #888;"+
+            "user-select:none;"+
+            "pointer-events:none;"}, text, document.body);
+    const timeoutId = setTimeout(hide, 1000);
+    function hide(){
+        if(div.parentNode){
+            div.parentNode.removeChild(div);
+            clearTimeout(timeoutId);
+        }
+    }
+    return {hide};
+}
 
 
 //
@@ -900,6 +925,16 @@ class GameView{
         this.update();
     }
 
+    showMessage(text){
+        this.hideMessage();
+        this.message = showMessage(text, this.boardElement.element);
+    }
+    hideMessage(){
+        if(this.message){
+            this.message.hide();
+            this.message = null;
+        }
+    }
 
     //
     // Main Menu
@@ -1160,6 +1195,7 @@ class GameView{
     }
 
     move(pos){
+        this.hideMessage();
         if(this.isAutoTurn()){ // current turn is auto player
             const nexts = this.model.history.getNextNodes();
             if(nexts.length <= 1){
@@ -1183,7 +1219,7 @@ class GameView{
         }
         else{
             if(!this.model.putStone(pos)){
-                alert('illegal');
+                this.showMessage("不正な着手です");
             }
         }
         this.update();
