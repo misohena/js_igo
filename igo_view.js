@@ -284,7 +284,7 @@ class BoardElement{
         const boardPixelH = this.boardPixelH = this.gridMargin*2+this.gridInterval*(this.h-1);
 
         const lineWidth = 1;
-        const starRadius = 2;
+        const starRadius = 2.5;
 
         const rootElement = this.rootElement = this.element = createSVG(
             "svg", {"class": "igo-board"},
@@ -318,6 +318,14 @@ class BoardElement{
                             createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*3, r:starRadius}),
                             createSVG("circle", {cx:gridInterval*3, cy:gridInterval*(h-4), r:starRadius}),
                             createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*(h-4), r:starRadius})
+                        ] : null,
+                        (w>=19 && h>=19 && w&1) ? [
+                            createSVG("circle", {cx:gridInterval*((w-1)/2), cy:gridInterval*3, r:starRadius}),
+                            createSVG("circle", {cx:gridInterval*((w-1)/2), cy:gridInterval*(h-4), r:starRadius}),
+                        ] : null,
+                        (w>=19 && h>=19 && h&1) ? [
+                            createSVG("circle", {cx:gridInterval*3    , cy:gridInterval*((h-1)/2), r:starRadius}),
+                            createSVG("circle", {cx:gridInterval*(w-4), cy:gridInterval*((h-1)/2), r:starRadius})
                         ] : null
                     ]),
 
