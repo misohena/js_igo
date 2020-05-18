@@ -115,6 +115,7 @@ window.addEventListener("load", ev=>{
 | gridInterval             | 盤面の線の間隔(px)                                   | number                                                                   |                                                                                          |
 | gridMargin               | 盤面の格子の外の空き(px)                             | number                                                                   |                                                                                          |
 | [[*options.ui][ui]]                       | UI要素の配置                                         | object                                                                   | {top:["GameStatus"], bottom:["MoveControl", "HistoryControl", "ViewControl", "Comment"]} |
+| enableWheel              | マウスホイールイベントを使用するか                   | boolean                                                                  | true                                                                                     |
 
 **** options.path
 

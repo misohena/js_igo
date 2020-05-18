@@ -889,6 +889,9 @@ class GameView{
         //
         this.keepBoardScale();
         this.setupSwipePinchOperation();
+        if(this.opt.enableWheel !== false){
+            this.setupMouseWheelOperation();
+        }
 
         this.update();
 
@@ -1789,6 +1792,20 @@ class GameView{
     backToMove(pos){
         this.model.backToMove(pos);
         this.update();
+    }
+
+    setupMouseWheelOperation(){
+        const onWheel = (e)=>{
+            if(e.deltaY > 0){
+                this.model.redo();
+                this.update();
+            }
+            else if(e.deltaY < 0){
+                this.model.undo();
+                this.update();
+            }
+        };
+        this.boardElement.element.addEventListener("wheel", onWheel, false);
     }
 
     // SGF
