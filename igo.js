@@ -866,6 +866,14 @@ class HistoryNode{
         dirs.reverse();
         return dirs;
     }
+    getNthPrev(n, clamp){
+        let node = this;
+        while(n > 0 && node.prev){
+            node = node.prev;
+            --n;
+        }
+        return n > 0 && !clamp ? null : node;
+    }
 
     // Next Nodes
 
@@ -889,6 +897,19 @@ class HistoryNode{
             const newIndex = Math.min(Math.max(index + delta, 0), this.nexts.length);
             this.nexts.splice(newIndex, 0, node);
         }
+    }
+    getNthNext(n, clamp){
+        let node = this;
+        while(n > 0 && node.nexts.length > 0){
+            node = node.nexts[0];
+            --n;
+        }
+        return n > 0 && !clamp ? null : node;
+    }
+    getNth(n, clamp){
+        return (n >= 0) ?
+            this.getNthNext(n, clamp) :
+            this.getNthPrev(-n, clamp);
     }
 
     // Tree
@@ -924,6 +945,13 @@ class HistoryNode{
             }
         }
         return null;
+    }
+    findFirstForkOrLast(){
+        let node = this;
+        while(node && node.nexts.length == 1){
+            node = node.nexts[0];
+        }
+        return node;
     }
     findDepthFirst(pred){
         if(pred(this)){
@@ -971,10 +999,7 @@ class HistoryNode{
         for(let q of queries){
             // move number : forward first variations
             if(typeof(q) == "number"){
-                while(q > 0 && curr.nexts.length > 0){
-                    curr = curr.nexts[0];
-                    --q;
-                }
+                curr = curr.getNth(q, true);
             }
             // SGF point string
             else if(typeof(q) == "string"){
@@ -993,6 +1018,10 @@ class HistoryNode{
                     if(nextFork && index < nextFork.nexts.length){
                         curr = nextFork.nexts[index];
                     }
+                }
+                // _ : first fork
+                else if(q == "_"){
+                    curr = curr.findFirstForkOrLast();
                 }
             }
         }
