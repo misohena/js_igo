@@ -209,7 +209,7 @@ class Board{
         this.rotateTurn();
 
         if(history){
-            history.pushPlace(pos, removedStonesArray, koPosOld, this.koPos, turnOld);
+            history.pushPlace(pos, removedStonesArray, koPosOld, turnOld);
         }
         return true;
     }
@@ -759,14 +759,13 @@ class BoardChanges {
 //
 
 class HistoryNode{
-    constructor(prev, pos, koPosNew, boardUndo){
+    constructor(prev, pos, boardUndo){
         // tree
         this.prev = prev;
         this.nexts = [];
         this.lastVisited = null; //?
         // move
         this.pos = pos;
-        this.koPosNew = koPosNew;
         // undo
         this.boardUndo = boardUndo;
         // properties
@@ -775,7 +774,7 @@ class HistoryNode{
         //this.setup = BoardDiff
     }
     shallowClone(){
-        const node = new HistoryNode(this.prev, this.pos, this.koPosNew, this.boardUndo);
+        const node = new HistoryNode(this.prev, this.pos, this.boardUndo);
         node.nexts = this.nexts;
         node.lastVisited = this.lastVisited;
         if(this.comment !== undefined){node.comment = this.comment;}
@@ -1081,7 +1080,7 @@ class HistoryNode{
 class HistoryTree{
     constructor(){
         this.moveNumber = 0;
-        this.pointer = this.first = new HistoryNode(null, NPOS, NPOS, null); //root node
+        this.pointer = this.first = new HistoryNode(null, NPOS, null); //root node
     }
     getCurrentNode(){return this.pointer;}
     getNextNodes(){return this.pointer ? this.pointer.nexts : [];}
@@ -1115,18 +1114,18 @@ class HistoryTree{
     // Move
 
     pushPass(koPosOld, turnOld){
-        this._pushMoveOrResign(POS_PASS, NPOS, new BoardChanges(null, null, null, koPosOld, turnOld));
+        this._pushMoveOrResign(POS_PASS, new BoardChanges(null, null, null, koPosOld, turnOld));
     }
-    pushResign(koPos, turnOld){
-        this._pushMoveOrResign(POS_RESIGN, koPos, null); //keep koPos, do not rotate a turn
+    pushResign(turnOld){
+        this._pushMoveOrResign(POS_RESIGN, null); //keep koPos, do not rotate a turn
     }
-    pushPlace(pos, removedStones, koPosOld, koPosNew, turnOld){
-        this._pushMoveOrResign(pos, koPosNew, BoardChanges.createUndoMove(turnOld, pos, removedStones, koPosOld));
+    pushPlace(pos, removedStones, koPosOld, turnOld){
+        this._pushMoveOrResign(pos, BoardChanges.createUndoMove(turnOld, pos, removedStones, koPosOld));
     }
     pushPlaceIllegal(pos, koPosOld, turnOld){
-        this._pushMoveOrResign(pos, NPOS, new BoardChanges(null, null, null, koPosOld, turnOld));
+        this._pushMoveOrResign(pos, new BoardChanges(null, null, null, koPosOld, turnOld));
     }
-    _pushMoveOrResign(pos, koPosNew, boardUndo){
+    _pushMoveOrResign(pos, boardUndo){
         // exclude NPOS (setup node)
         // node can have multiple setup nodes
         if(pos == NPOS){
@@ -1141,17 +1140,17 @@ class HistoryTree{
             this.pointer = nodeSamePos;
         }
         else{
-            this._pushNewNode(pos, koPosNew, boardUndo);
+            this._pushNewNode(pos, boardUndo);
         }
         if(isIntersectionPosition(pos) || pos == POS_PASS){ //exclude NPOS, POS_RESIGN
             ++this.moveNumber;
         }
     }
-    pushSetupNode(koPosNew){
-        return this._pushNewNode(NPOS, koPosNew, null);
+    pushSetupNode(){
+        return this._pushNewNode(NPOS, null);
     }
-    _pushNewNode(pos, koPosNew, boardUndo){
-        const newNode = new HistoryNode(this.pointer, pos, koPosNew, boardUndo);
+    _pushNewNode(pos, boardUndo){
+        const newNode = new HistoryNode(this.pointer, pos, boardUndo);
         this.pointer.nexts.push(newNode);
         this.pointer.lastVisited = newNode;
         this.pointer = newNode;
@@ -1336,7 +1335,7 @@ class Game{
     resign(){
         if( ! this.finished){
             this.setFinished(getOppositeColor(this.getTurn()));
-            this.history.pushResign(this.board.koPos, this.getTurn()); //keep koPos, do not rotate a turn
+            this.history.pushResign(this.getTurn()); //keep koPos, do not rotate a turn
         }
     }
 
@@ -2259,7 +2258,7 @@ class HistoryTreeString {
         function procSetup(){
             // Add new empty node
             if(! (game.history.getCurrentNode().isRoot() && nodeStack.length == 0)){
-                game.history.pushSetupNode(board.koPos); ///@todo keep koPos? or not?
+                game.history.pushSetupNode(); ///@todo keep koPos? or not?
             }
             // Add setup property
             const setup = game.history.getCurrentNode().acquireSetup();
@@ -2361,7 +2360,7 @@ class HistoryTreeString {
         function procSetup(){
             // Add new empty node
             if(! (game.history.getCurrentNode().isRoot() && nodeStack.length == 0)){
-                game.history.pushSetupNode(board.koPos); ///@todo keep koPos? or not?
+                game.history.pushSetupNode(); ///@todo keep koPos? or not?
             }
             // Add setup property
             const setup = game.history.getCurrentNode().acquireSetup();
@@ -2511,7 +2510,7 @@ class HistoryTreeString {
                         if(!setup){
                             // add node
                             if(!game.history.getCurrentNode().isSetup()){
-                                game.history.pushSetupNode(game.board.koPos); ///@todo keep koPos? or not?
+                                game.history.pushSetupNode(); ///@todo keep koPos? or not?
                             }
                             // add setup property
                             setup = game.history.getCurrentNode().acquireSetup();

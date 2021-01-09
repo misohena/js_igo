@@ -2322,7 +2322,7 @@ class GameView{
                     }
                     else{
                         if( ! currNode.isSetup()){
-                            currNode = gameView.model.history.pushSetupNode(gameView.model.board.koPos);
+                            currNode = gameView.model.history.pushSetupNode();
                             alert("Setup用のノードを追加しました。");
                         }
                         currNode.setSetup(boardChanges);
