@@ -1116,7 +1116,7 @@ class HistoryTree{
     pushPass(koPosOld, turnOld){
         this._pushMoveOrResign(POS_PASS, new BoardChanges(null, null, null, koPosOld, turnOld));
     }
-    pushResign(turnOld){
+    pushResign(){
         this._pushMoveOrResign(POS_RESIGN, null); //keep koPos, do not rotate a turn
     }
     pushPlace(pos, removedStones, koPosOld, turnOld){
@@ -1335,7 +1335,7 @@ class Game{
     resign(){
         if( ! this.finished){
             this.setFinished(getOppositeColor(this.getTurn()));
-            this.history.pushResign(this.getTurn()); //keep koPos, do not rotate a turn
+            this.history.pushResign(); //keep koPos, do not rotate a turn
         }
     }
 
