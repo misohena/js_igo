@@ -2449,6 +2449,7 @@ class HistoryTreeString {
                                 throw new Error("Invalid color " + pid + " " + pvalues[0]);
                             }
                             setup.setTurnChange(newTurn);
+                            turn = newTurn;
                         }
                         break;
                     // Node Annotation Properties
