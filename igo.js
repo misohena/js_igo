@@ -454,7 +454,6 @@ class Board{
 igo.Board = Board;
 
 
-
 //
 // BoardDiff
 //
@@ -678,8 +677,6 @@ class BoardDiff{
 }
 igo.BoardDiff = BoardDiff;
 
-    // compress
-
 
 
 //
@@ -687,21 +684,10 @@ igo.BoardDiff = BoardDiff;
 //
 
 class BoardChanges {
-    static createUndoMove(color, pos, removedStones, koPosOld){
-        return new BoardChanges(
-            (color==WHITE ? removedStones : null),
-            (color==BLACK ? removedStones : null),
-            pos,
-            koPosOld,
-            color,
-            (color==WHITE && removedStones ? -removedStones.length : 0),
-            (color==BLACK && removedStones ? -removedStones.length : 0)
-        );
-    }
     constructor(black, white, empty, koPos, turn, blackPrisoners, whitePrisoners){
-        this.black = black;
-        this.white = white;
-        this.empty = empty;
+        this.black = typeof(black) == "number" ? [black] : black;
+        this.white = typeof(white) == "number" ? [white] : white;
+        this.empty = typeof(empty) == "number" ? [empty] : empty;
         this.koPos = koPos;
         this.turn = turn;
         this.blackPrisoners = blackPrisoners;
@@ -751,7 +737,161 @@ class BoardChanges {
         addPrisoners(BLACK, this.blackPrisoners);
         addPrisoners(WHITE, this.whitePrisoners);
     }
+
+    // Turn Change
+
+    setTurnChange(turn){
+        this.turn = turn;
+    }
+
+    hasTurnChange(){ return this.turn !== null; }
+    getTurn(){ return this.turn; }
+
+    // Intersection Changes
+
+    addIntersectionChange(pos, color){
+        switch(color){
+        case EMPTY: if(this.empty){this.empty.push(pos);}else{this.empty = [pos];} break;
+        case BLACK: if(this.black){this.black.push(pos);}else{this.black = [pos];} break;
+        case WHITE: if(this.white){this.white.push(pos);}else{this.white = [pos];} break;
+        }
+    }
+
+    hasIntersectionChanges(){
+        return (this.empty && this.empty.length > 0) ||
+            (this.black && this.black.length > 0) ||
+            (this.white && this.white.length > 0);
+    }
+
+    getPositionList(color){
+        switch(color){
+        case EMPTY: return this.empty;
+        case BLACK: return this.black;
+        case WHITE: return this.white;
+        default: return null;
+        }
+    }
+    getRectList(color, board){
+        return BoardChanges.convertPointListToRectList(
+            this.getPositionList(color),
+            board);
+    }
+
+    static convertPointListToRectList(posList, board){
+        if(!posList || posList.length == 0){
+            return [];
+        }
+        // 横方向に連続している交点をまとめる。
+        const intersections = new Array(board.getIntersectionCount());
+        for(const pos of posList.sort()){
+            const x = board.toX(pos);
+            const y = board.toY(pos);
+            const left = board.leftOf(pos);
+            const leftIsect = left != NPOS ? intersections[left] : null;
+            if(leftIsect){
+                leftIsect.right = x;
+                intersections[pos] = leftIsect;
+            }
+            else{
+                intersections[pos] = {left:x, top:y, right:x, bottom:y};
+            }
+        }
+        // 縦方向に同じ状態、横幅のものをまとめる。
+        for(let y = 1; y < board.h; ++y){
+            for(let x = 0; x < board.w; ++x){
+                let pos = board.toPosition(x, y);
+                const currIsect = intersections[pos];
+                if(currIsect){
+                    const above = board.above(pos);
+                    const aboveIsect = intersections[above];
+                    if(aboveIsect &&
+                       aboveIsect.state == currIsect.state &&
+                       aboveIsect.left == currIsect.left &&
+                       aboveIsect.right == currIsect.right){
+                        aboveIsect.bottom = y;
+                        for(; x <= aboveIsect.right; ++x, pos = board.rightOf(pos)){
+                            intersections[pos] = aboveIsect;
+                        }
+                    }
+                }
+            }
+        }
+        // unique
+        const rects = [];
+        for(const isect of intersections){
+            if(isect){
+                if(rects.indexOf(isect) < 0){
+                    rects.push(isect);
+                }
+            }
+        }
+        return rects;
+    }
+
+    // Create
+
+    static diffBoard(toBoard, fromBoard){
+        // diff intersections
+        if(toBoard.w != fromBoard.w || toBoard.h != fromBoard.h){
+            throw new Error("Board sizes not match");
+        }
+        const numIsect = toBoard.getIntersectionCount();
+        let black = null, white = null, empty = null;
+        for(let pos = 0; pos < numIsect; ++pos){
+            const toState = toBoard.getAt(pos);
+            if(toState != fromBoard.getAt(pos)){
+                switch(toState){
+                case EMPTY: if(empty){empty.push(pos);}else{empty = [pos];} break;
+                case BLACK: if(black){black.push(pos);}else{black = [pos];} break;
+                case WHITE: if(white){white.push(pos);}else{white = [pos];} break;
+                }
+            }
+        }
+        function diffValue(toValue, fromValue){
+            return toValue != fromValue ? toValue : null;
+        }
+        function diffIntegerDelta(toValue, fromValue){
+            return toValue != fromValue ? toValue - fromValue : null;
+        }
+        return new BoardChanges(
+            black, white, empty,
+            diffValue(toBoard.koPos, fromBoard.koPos),
+            diffValue(toBoard.turn, fromBoard.turn),
+            diffIntegerDelta(
+                toBoard.getPrisoners(BLACK),
+                fromBoard.getPrisoners(BLACK)),
+            diffIntegerDelta(
+                toBoard.getPrisoners(WHITE),
+                fromBoard.getPrisoners(WHITE)));
+    }
+
+    static createBoard(toBoard){
+        return BoardChanges.diffBoard(
+            toBoard,
+            new Board(toBoard.w, toBoard.h));
+    }
+
+    static createUndoMove(color, pos, removedStones, koPosOld){
+        return new BoardChanges(
+            (color==WHITE ? removedStones : null),
+            (color==BLACK ? removedStones : null),
+            [pos],
+            koPosOld,
+            color,
+            (color==WHITE && removedStones ? -removedStones.length : 0),
+            (color==BLACK && removedStones ? -removedStones.length : 0)
+        );
+    }
+
+    static createUndoChanges(changes, fromBoard){
+        const toBoard = fromBoard.clone();
+        changes.applyTo(toBoard);
+        return BoardChanges.diffBoard(
+            fromBoard, toBoard); //toBoard to fromBoard
+    }
+
 }
+igo.BoardChanges = BoardChanges;
 
 
 //
@@ -759,22 +899,26 @@ class BoardChanges {
 //
 
 class HistoryNode{
-    constructor(prev, pos, boardUndo){
+    addNewNextNode(pos){
+        const newNode = new HistoryNode(this, pos);
+        this.nexts.push(newNode);
+        return newNode;
+    }
+
+    constructor(prev, pos){
         // tree
         this.prev = prev;
         this.nexts = [];
         this.lastVisited = null; //?
         // move
         this.pos = pos;
-        // undo
-        this.boardUndo = boardUndo;
         // properties
         //this.comment = <string>
         //this.props = {<id>: {value:<value>, inherit:<boolean>}, ...}
-        //this.setup = BoardDiff
+        //this.setup = BoardChanges
     }
     shallowClone(){
-        const node = new HistoryNode(this.prev, this.pos, this.boardUndo);
+        const node = new HistoryNode(this.prev, this.pos);
         node.nexts = this.nexts;
         node.lastVisited = this.lastVisited;
         if(this.comment !== undefined){node.comment = this.comment;}
@@ -782,16 +926,15 @@ class HistoryNode{
         if(this.setup !== undefined){node.setup = this.setup;}
         return node;
     }
-    isEmpty(){
+    isRemovable(){
         return this.pos == NPOS &&
-            (this.boardUndo == null || this.boardUndo.isEmpty()) &&
             this.comment === undefined &&
             this.props === undefined && ///@todo check inside of this.props
             this.setup === undefined &&
             this.nexts.length <= 1;
     }
     removeThisNodeOnly(){ //remove this node only. add next nodes to previous node
-        if(this.isEmpty()){ //空でないときはこのノードの変更点を前後のノードにマージするか迷うので
+        if(this.isRemovable()){ //空でないときはこのノードの変更点を前後のノードにマージするか迷うので
             const prev = this.prev;
             if(prev){
                 const index = prev.nexts.indexOf(this);
@@ -809,6 +952,9 @@ class HistoryNode{
     }
 
     // Node Types
+    getPos(){return this.pos;}
+    setPos(pos){this.pos = pos;}
+
     isPass(){return this.pos == POS_PASS;}
     isResign(){return this.pos == POS_RESIGN;}
     isPlace(){return isIntersectionPosition(this.pos);}
@@ -876,7 +1022,13 @@ class HistoryNode{
 
     // Next Nodes
 
+    getNextNodeDefault(){
+        return this.lastVisited ||
+            (this.nexts.length >= 1 ? this.nexts[0] : null);
+    }
+
     findNextByPos(pos){return this.nexts.find(node=>node.pos == pos);}
+    indexOfNext(node){return this.nexts.indexOf(node);}
     deleteNext(node){
         const index = this.nexts.indexOf(node);
         if(index >= 0){
@@ -1066,21 +1218,22 @@ class HistoryNode{
     // Setup property (Board change)
     hasSetup(){return !!this.setup;}
     getSetup(){return this.setup;}
-    setSetup(boardChanges){ //set BoardDiff object
+    setSetup(boardChanges){ //set BoardChanges object
         // do not recycle current this.setup object.
         // see shallowClone() usage in HistoryTreeString.toString
         this.setup = boardChanges;
     }
     removeSetup(){delete this.setup;}
     acquireSetup(){
-        return this.setup || (this.setup = new BoardDiff());
+        return this.setup || (this.setup = new BoardChanges());
     }
 }
 
 class HistoryTree{
-    constructor(){
+    constructor(rootNodeOpt){
         this.moveNumber = 0;
-        this.pointer = this.first = new HistoryNode(null, NPOS, null); //root node
+        this.pointer = this.first = (rootNodeOpt || new HistoryNode(null, NPOS)); //root node
+        this.undoStack = [];
     }
     getCurrentNode(){return this.pointer;}
     getNextNodes(){return this.pointer ? this.pointer.nexts : [];}
@@ -1122,9 +1275,6 @@ class HistoryTree{
     pushPlace(pos, removedStones, koPosOld, turnOld){
         this._pushMoveOrResign(pos, BoardChanges.createUndoMove(turnOld, pos, removedStones, koPosOld));
     }
-    pushPlaceIllegal(pos, koPosOld, turnOld){
-        this._pushMoveOrResign(pos, new BoardChanges(null, null, null, koPosOld, turnOld));
-    }
     _pushMoveOrResign(pos, boardUndo){
         // exclude NPOS (setup node)
         // node can have multiple setup nodes
@@ -1133,11 +1283,8 @@ class HistoryTree{
         }
         const nodeSamePos = this.pointer.findNextByPos(pos);
         if(nodeSamePos){ //place, pass, resign
-            // update UNDO data
-            nodeSamePos.boardUndo = boardUndo;
             // select nodeSamePos
-            this.pointer.lastVisited = nodeSamePos;
-            this.pointer = nodeSamePos;
+            this._selectNextNode(nodeSamePos, boardUndo);
         }
         else{
             this._pushNewNode(pos, boardUndo);
@@ -1146,20 +1293,27 @@ class HistoryTree{
             ++this.moveNumber;
         }
     }
-    pushSetupNode(){
-        return this._pushNewNode(NPOS, null);
+    pushSetupNode(changes, boardUndo){
+        const node = this._pushNewNode(NPOS, boardUndo);
+        node.setSetup(changes);
+        return node;
     }
     _pushNewNode(pos, boardUndo){
-        const newNode = new HistoryNode(this.pointer, pos, boardUndo);
-        this.pointer.nexts.push(newNode);
-        this.pointer.lastVisited = newNode;
-        this.pointer = newNode;
+        const newNode = this.pointer.addNewNextNode(pos);
+        this._selectNextNode(newNode, boardUndo);
         return newNode;
+    }
+
+    _selectNextNode(nextNode, boardUndo){
+        //assert(nextNode && this.getCurrentNode().indexOfNext(nextNode) >= 0)
+        this.pointer.lastVisited = nextNode;
+        this.pointer = nextNode;
+        this.undoStack.push(boardUndo);
     }
 
     // Undo/Redo
 
-    undo(board, game){
+    undo(game){
         if( ! this.pointer.prev){
             return false;
         }
@@ -1172,13 +1326,12 @@ class HistoryTree{
         else if(this.pointer.isSecondConsecutivePass()){
             game.cancelFinish();
         }
-        // undo setup
-        if(node.setup){
-            node.setup.applyInverseTo(board);
-        }
         // undo board
-        if(node.boardUndo){
-            node.boardUndo.applyTo(board);
+        if(this.undoStack.length > 0){
+            const changes = this.undoStack.pop();
+            if(changes){
+                changes.applyTo(game.board);
+            }
         }
         // undo move number
         if(isIntersectionPosition(node.pos) || node.pos == POS_PASS){ //exclude NPOS, POS_RESIGN
@@ -1187,54 +1340,41 @@ class HistoryTree{
         this.pointer = this.pointer.prev;
         return true;
     }
-    redo(board, game){
-        if( ! this.pointer.lastVisited){
+    applyNextNode(nextNode, game){
+        if(!nextNode){
             return false;
         }
-        const node = this.pointer.lastVisited;
-
-        // redo Board state
-        if(isIntersectionPosition(node.pos)){
-            // 実際に打って再現する。実際に打つことで
-            // - 現在の盤面で合法であることを確認する。
-            // - 現在の盤面における取石やコウ状態でUNDO情報を更新する。
-            if( ! board.putStone(node.pos, board.getTurn(), this)){
-                // 以前置けた手が置けなくなっている
-                // (前の盤面がフリー編集などによって変わった)。
-                // 石は置かずにコウと手番だけ進める。
-                // 不正な手としてノードを更新し、
-                // undo時に間違った戻しをしないようにする。
-                const koPosOld = board.koPos;
-                board.setKoPos(NPOS);
-                const turnOld = board.getTurn();
-                board.rotateTurn();
-                this.pushPlaceIllegal(node.pos, koPosOld, turnOld);
+        else if(nextNode.isPass()){
+            return game.pass();
+        }
+        else if(nextNode.isResign()){
+            return game.resign();
+        }
+        else if(nextNode.isPlace()){
+            return game.putStone(nextNode.getPos());
+        }
+        else if(nextNode.isSetup()){
+            const changes = nextNode.getSetup();
+            const boardUndo = BoardChanges.createUndoChanges(changes, game.board);
+            if(changes){
+                changes.applyTo(game.board);
             }
+            if(this.getCurrentNode().indexOfNext(nextNode) >= 0){
+                this._selectNextNode(nextNode, boardUndo);
+            }
+            ///@todo if nextNode is not a next node?
+            return true;
         }
-        else if(node.pos == POS_PASS){
-            board.pass(this);
-        }
-        else{
-            // POS_RESIGN, NPOS
-            this.pointer = this.pointer.lastVisited;
-            // do not change koPos, turn, moveNumber
-        }
-
-        // redo setup
-        if(node.setup){
-            node.setup.applyTo(board);
-        }
-
-        // redo Game state
-        if(node.pos == POS_RESIGN){
-            game.setFinished(getOppositeColor(board.getTurn()));
-        }
-        else if(this.pointer.isSecondConsecutivePass()){
-            game.setFinished(EMPTY); ///@todo 勝敗判定！
-        }
-        return true;
+        return false;
     }
-    redoTo(descendant, board, game){
+    redo(game){
+        const nextNode = this.pointer.getNextNodeDefault();
+        if( ! nextNode){
+            return false;
+        }
+        return this.applyNextNode(nextNode, game);
+    }
+    redoTo(descendant, game){
         if(!descendant){
             return false;
         }
@@ -1248,27 +1388,27 @@ class HistoryTree{
         }
         // descendantにたどり着くまでredoしていく
         while(this.pointer != descendant){
-            if(!this.redo(board, game)){
+            if(!this.redo(game)){
                 return false;
             }
         }
         return true;
     }
-    backToMove(pos, board, game){
+    backToMove(pos, game){
         while(this.pointer.pos != pos && this.pointer.prev){
-            this.undo(board, game);
+            this.undo(game);
         }
     }
-    undoTo(ancestor, board, game){
+    undoTo(ancestor, game){
         while(this.pointer != ancestor && this.pointer.prev){
-            this.undo(board, game);
+            this.undo(game);
         }
     }
-    undoAll(board, game){
-        while(this.undo(board, game));
+    undoAll(game){
+        while(this.undo(game));
     }
-    redoAll(board, game){
-        while(this.redo(board, game));
+    redoAll(game){
+        while(this.redo(game));
     }
 
     // Tree Operations
@@ -1278,6 +1418,18 @@ class HistoryTree{
     }
     changeBranchOrder(pos, delta){
         this.pointer.changeNextOrder(pos, delta);
+    }
+
+    // Previous Board
+    getPreviousBoard(game){
+        if(this.undoStack.length > 0){
+            const board = game.board.clone();
+            this.undoStack[this.undoStack.length - 1].applyTo(board);
+            return board;
+        }
+        else{
+            return new Board(game.board.w, game.board.h);
+        }
     }
 }
 igo.HistoryTree = HistoryTree;
@@ -1290,12 +1442,20 @@ igo.HistoryTree = HistoryTree;
 //
 
 class Game{
-    constructor(w, h){
+    constructor(w, h, rootNodeOpt){
         this.finished = false;
         this.winner = EMPTY;
         this.board = new Board(w, h);
 //        this.history = new History();
-        this.history = new HistoryTree();
+        this.history = new HistoryTree(rootNodeOpt);
+
+        // Apply root setup to the board
+        if(rootNodeOpt){
+            const setup = rootNodeOpt.getSetup();
+            if(setup){
+                setup.applyTo(this.board);
+            }
+        }
     }
 
     // Finished & Winner
@@ -1312,6 +1472,7 @@ class Game{
     }
 
     // Board
+    getBoard(){return this.board;}
     getTurn(){return this.board.getTurn();}
     getPrisoners(color){return this.board.getPrisoners(color);}
 
@@ -1359,19 +1520,21 @@ class Game{
 
     getMoveNumber(){return this.history.getMoveNumber();}
 
-    undo(){return this.history.undo(this.board, this);}
-    redo(){return this.history.redo(this.board, this);}
-    redoTo(descendant){return this.history.redoTo(descendant, this.board, this);}
+    undo(){return this.history.undo(this);}
+    redo(){return this.history.redo(this);}
+    redoTo(descendant){return this.history.redoTo(descendant, this);}
     redoByQuery(queries){
         return this.history.redoTo(
             this.history.getCurrentNode().findByQuery(queries, this.board),
-            this.board, this);
+            this);
     }
-    undoAll(){this.history.undoAll(this.board, this);}
-    redoAll(){this.history.redoAll(this.board, this);}
-    backToMove(pos){this.history.backToMove(pos, this.board, this);}
+    undoAll(){this.history.undoAll(this);}
+    redoAll(){this.history.redoAll(this);}
+    backToMove(pos){this.history.backToMove(pos, this);}
 
     setCommentToCurrentNode(text){this.history.setCommentToCurrentNode(text);}
+
+    getPreviousBoard(){return this.history.getPreviousBoard(this);}
 
     // SGF
 
@@ -1863,31 +2026,23 @@ class HistoryTreeBase64Formatter extends HistoryTreeFormatter{
 
     putSetupProperty(setup, turn){
         this.putSubCmd(HTS_SUBCMD_SETUP);
-        if(setup.intersections){
+        if(setup.hasIntersectionChanges()){
             this.bitWriter.put(1, 1);
-            // 色別、点・矩形別に分類する。
-            const states = [
-                {points:[], rects:[]}, //EMPTY
-                {points:[], rects:[]}, //BLACK
-                {points:[], rects:[]}]; //WHITE
-            for(const change of setup.getCompressedIntersectionChanges(this.board)){
-                const stateIndex = getIndexOfEmptyBlackWhite(change.state);
-                if(change.left == change.right && change.top == change.bottom){
-                    states[stateIndex].points.push(change);
-                }
-                else{
-                    states[stateIndex].rects.push(change);
-                }
-            }
             // 色別、点・矩形別に出力する。
+            const ISTATES = [EMPTY, BLACK, WHITE];
             for(let si = 0; si < 3; ++si){
-                for(let change of states[si].points){
-                    this.putPos(this.board.toPosition(change.left, change.top));
+                const rects = setup.getRectList(ISTATES[si], this.board);
+                for(let r of rects){
+                    if(r.left == r.right && r.top == r.bottom){
+                        this.putPos(this.board.toPosition(r.left, r.top));
+                    }
                 }
                 this.putPos(this.boardSize);
-                for(let change of states[si].rects){
-                    this.putPos(this.board.toPosition(change.left, change.top));
-                    this.putPos(this.board.toPosition(change.right, change.bottom));
+                for(let r of rects){
+                    if(r.left != r.right || r.top != r.bottom){
+                        this.putPos(this.board.toPosition(r.left, r.top));
+                        this.putPos(this.board.toPosition(r.right, r.bottom));
+                    }
                 }
                 this.putPos(this.boardSize);
             }
@@ -1895,10 +2050,10 @@ class HistoryTreeBase64Formatter extends HistoryTreeFormatter{
         else{
             this.bitWriter.put(0, 1);
         }
-        if(setup.turn && setup.turn.newTurn != turn){
+        if(setup.hasTurnChange() && setup.getTurn() != turn){
             this.bitWriter.put(1, 1);
-            this.bitWriter.put(setup.turn.newTurn == BLACK ? 0 : 1, 1);
-            turn = setup.turn.newTurn;
+            this.bitWriter.put(setup.getTurn() == BLACK ? 0 : 1, 1);
+            turn = setup.getTurn();
         }
         else{
             this.bitWriter.put(0, 1);
@@ -1947,38 +2102,30 @@ class HistoryTreeHumanReadableFormatter extends HistoryTreeFormatter{
 
     putSetupProperty(setup, turn){
         this.putSubCmd(HTS_SUBCMD_SETUP);
-        if(setup.intersections){
+        if(setup.hasIntersectionChanges()){
             this.str += "I";
-            // 色別、点・矩形別に分類する。
-            const states = [
-                {points:[], rects:[]}, //EMPTY
-                {points:[], rects:[]}, //BLACK
-                {points:[], rects:[]}]; //WHITE
-            for(const change of setup.getCompressedIntersectionChanges(this.board)){
-                const stateIndex = getIndexOfEmptyBlackWhite(change.state);
-                if(change.left == change.right && change.top == change.bottom){
-                    states[stateIndex].points.push(change);
-                }
-                else{
-                    states[stateIndex].rects.push(change);
-                }
-            }
             // 色別、点・矩形別に出力する。
+            const ISTATES = [EMPTY, BLACK, WHITE];
             for(let si = 0; si < 3; ++si){
-                for(let change of states[si].points){
-                    this.putPos(this.board.toPosition(change.left, change.top));
+                const rects = setup.getRectList(ISTATES[si], this.board);
+                for(let r of rects){
+                    if(r.left == r.right && r.top == r.bottom){
+                        this.putPos(this.board.toPosition(r.left, r.top));
+                    }
                 }
                 this.str += ".";
-                for(let change of states[si].rects){
-                    this.putPos(this.board.toPosition(change.left, change.top));
-                    this.putPos(this.board.toPosition(change.right, change.bottom));
+                for(let r of rects){
+                    if(r.left != r.right || r.top != r.bottom){
+                        this.putPos(this.board.toPosition(r.left, r.top));
+                        this.putPos(this.board.toPosition(r.right, r.bottom));
+                    }
                 }
                 this.str += ".";
             }
         }
-        if(setup.turn && setup.turn.newTurn != turn){
+        if(setup.hasTurnChange() && setup.getTurn() != turn){
             this.str += "T";
-            this.str += setup.turn.newTurn == BLACK ? "B" : "W";
+            this.str += setup.getTurn() == BLACK ? "B" : "W";
         }
         this.str += "--";
     }
@@ -2048,18 +2195,25 @@ class HistoryTreeSGFFormatter extends HistoryTreeFormatter {
         }
     }
     putSetupProperty(setup, turn){
-        if(setup.intersections){
-            for(const change of setup.getCompressedIntersectionChanges(this.board)){
-                // AB, AW, AE
-                this.str += "A" + toSGFColor(change.state) + "[" +
-                    toSGFPointXY(change.left, change.top) +
-                    (change.left != change.right || change.top != change.bottom ?
-                     ":" + toSGFPointXY(change.right, change.bottom) : "") + "]";
+        if(setup.hasIntersectionChanges()){
+            const ISTATES = [EMPTY, BLACK, WHITE];
+            for(let si = 0; si < 3; ++si){
+                const rects = setup.getRectList(ISTATES[si], this.board);
+                if(rects.length > 0){
+                    this.str += "A" + toSGFColor(ISTATES[si]);
+                    for(const r of rects){
+                        this.str +=
+                            "[" +
+                            toSGFPointXY(r.left, r.top) +
+                            (r.left != r.right || r.top != r.bottom ?
+                             ":" + toSGFPointXY(r.right, r.bottom) : "") + "]";
+                    }
+                }
             }
         }
-        if(setup.turn && setup.turn.newTurn != turn){
-            this.str += "PL[" + toSGFColor(setup.turn.newTurn) + "]";
-            turn = setup.turn.newTurn;
+        if(setup.hasTurnChange() && setup.getTurn() != turn){
+            this.str += "PL[" + toSGFColor(setup.getTurn()) + "]";
+            turn = setup.getTurn();
         }
     }
     putMarks(marks){
@@ -2094,12 +2248,11 @@ class HistoryTreeString {
         if(opt.fromCurrentNode){
             // make setup property
             const emptyBoard = new Board(board.w, board.h);
-            const boardChanges = BoardDiff.diff(emptyBoard, board);
+            const boardChanges = BoardChanges.diffBoard(board, emptyBoard);
             // clone current node
             startNode = history.getCurrentNode().shallowClone();
             startNode.prev = null;
             startNode.pos = NPOS;
-            startNode.boardUndo = null;
             startNode.setSetup(boardChanges); //setSetupはclone元の状態を変更しない、はず。
         }
         else{
@@ -2128,8 +2281,10 @@ class HistoryTreeString {
         }
         else{
             // output all nodes in the tree
+            const turnStack = [];
             startNode.visitAllNodes(
                 (node)=>{ //enter
+                    turnStack.push(turn);
                     if(node.getNumberOfSiblings() > 1){
                         format.beginBranch(node, turn);
                     }
@@ -2139,14 +2294,7 @@ class HistoryTreeString {
                     if(node.getNumberOfSiblings() > 1){
                         format.endBranch(node, turn);
                     }
-                    if(node.setup && node.setup.turn){
-                        turn = node.setup.turn.oldTurn;
-                    }
-                    else{
-                        if(node.isPass() || node.isPlace()){
-                            turn = getOppositeColor(turn);
-                        }
-                    }
+                    turn = turnStack.pop();
                 });
         }
         format.endTree(turn);
@@ -2171,8 +2319,8 @@ class HistoryTreeString {
             if(node.hasSetup()){
                 const setup = node.getSetup();
                 format.putSetupProperty(setup, turn);
-                if(setup.turn && setup.turn.newTurn != turn){
-                    turn = setup.turn.newTurn;
+                if(setup.hasTurnChange() && setup.getTurn() != turn){
+                    turn = setup.getTurn();
                 }
             }
             if(node.hasProperty("marks")){
@@ -2207,39 +2355,35 @@ class HistoryTreeString {
         function readSubCmd() {return bitReader.get(HTS_BITWIDTH_SUBCMD);}
         function read1Bit() {return bitReader.get(1);}
 
-        const game = new Game(w, h);
-        const board = game.board;
-
+        const rootNode = new HistoryNode(null, NPOS);
+        let currNode = rootNode;
         const nodeStack = [];
         for(;;){
             const pos = readPos();
             if(pos >= 0 && pos < boardSize){
-                if(!game.putStone(pos)){
-                    console.log("illegal move " + pos);
-                    return null; //illegal move
-                }
+                currNode = currNode.addNewNextNode(pos);
             }
             else{
                 const cmd = pos - boardSize;
                 switch(cmd){
-                case HTS_CMD_PASS: game.pass(); break;
+                case HTS_CMD_PASS: currNode = currNode.addNewNextNode(POS_PASS); break;
                 case HTS_CMD_BEGIN_BRANCH:
-                    nodeStack.push(game.history.getCurrentNode());
+                    nodeStack.push(currNode);
                     break;
                 case HTS_CMD_END_BRANCH:
                     if(nodeStack.length == 0){
-                        game.history.undoAll(board, game);
-                        return game; //end of tree
+                        //end of tree
+                        return new Game(w, h, rootNode);
                     }
                     else{
-                        game.history.undoTo(nodeStack.pop(), board, game);
+                        currNode = nodeStack.pop();
                     }
                     break;
                 case HTS_CMD_SPECIAL:
                     {
                         const subcmd = readSubCmd();
                         switch(subcmd){
-                        case HTS_SUBCMD_RESIGN: game.resign(); break;
+                        case HTS_SUBCMD_RESIGN: currNode = currNode.addNewNextNode(POS_RESIGN); break;
                         case HTS_SUBCMD_SETUP: procSetup(); break;
                         default:
                             console.log("unknown subcmd " + subcmd);
@@ -2253,16 +2397,11 @@ class HistoryTreeString {
                 }
             }
         }
-        return game;
+        return new Game(w, h, rootNode);
 
         function procSetup(){
-            // Add new empty node
-            if(! (game.history.getCurrentNode().isRoot() && nodeStack.length == 0)){
-                game.history.pushSetupNode(); ///@todo keep koPos? or not?
-            }
-            // Add setup property
-            const setup = game.history.getCurrentNode().acquireSetup();
             // setup intersections
+            const posLists = [[], [], []];
             if(read1Bit() != 0){
                 const states = [EMPTY, BLACK, WHITE];
                 for(let si = 0; si < 3; ++si){
@@ -2273,10 +2412,8 @@ class HistoryTreeString {
                         if(pos >= boardSize){
                             break;
                         }
-                        if(board.isValidPosition(pos)){
-                            const oldState = board.getAt(pos);
-                            setup.addIntersectionChange(pos, oldState, newState);
-                            game.setIntersectionStateForced(pos, newState);
+                        if(isValidPosition(pos, w, h)){
+                            posLists[si].push(pos);
                         }
                     }
                     // rectangles
@@ -2286,27 +2423,34 @@ class HistoryTreeString {
                             break;
                         }
                         const posRightBottom = readPos();
-                        const left = board.toX(posLeftTop);
-                        const top = board.toY(posLeftTop);
-                        const right = board.toX(posRightBottom);
-                        const bottom = board.toY(posRightBottom);
+                        const left = posLeftTop % w; //toX
+                        const top = posLeftTop / w | 0; //toY
+                        const right = posRightBottom % w; //toX
+                        const bottom = posRightBottom / w | 0; //toY
                         for(let y = top; y <= bottom; ++y){
                             for(let x = left; x <= right; ++x){
-                                const pos = board.toPosition(x, y);
-                                const oldState = board.getAt(pos);
-                                setup.addIntersectionChange(pos, oldState, newState);
-                                game.setIntersectionStateForced(pos, newState);
+                                const pos = toPosition(x, y, w);
+                                posLists[si].push(pos);
                             }
                         }
                     }
                 }
             }
             // setup turn
+            let newTurn = null;
             if(read1Bit() != 0){
-                const newTurn = read1Bit() == 0 ? BLACK : WHITE;
-                const oldTurn = game.getTurn();
-                setup.setTurnChange(oldTurn, newTurn);
-                game.setTurnForced(newTurn);
+                newTurn = read1Bit() == 0 ? BLACK : WHITE;
+            }
+
+            // Set changes to setup node
+            ///@todo keep koPos? or not?
+            const changes = new BoardChanges(posLists[1], posLists[2], posLists[0], null, newTurn, null, null);
+            if(currNode.isRoot() && nodeStack.length == 0){
+                currNode.setSetup(changes);
+            }
+            else{
+                currNode = currNode.addNewNextNode(NPOS);
+                currNode.setSetup(changes);
             }
         }
     }
@@ -2321,25 +2465,21 @@ class HistoryTreeString {
             return parseSGFPoint(c1 + c2, w, h);
         }
 
-        const game = new Game(w, h);
-        const board = game.board;
-
+        const rootNode = new HistoryNode(null, NPOS);
+        let currNode = rootNode;
         const nodeStack = [];
         for(;;){
             const prefix = get();
             if(prefix == "_"){
                 const pos = readPos();
-                if(!game.putStone(pos)){
-                    console.log("illegal move " + pos);
-                    return null; //illegal move
-                }
+                currNode = currNode.addNewNextNode(pos);
             }
             else if(prefix == "-"){
                 const cmd = get();
                 switch(cmd){
-                case "P": game.pass(); break;
-                case "B": nodeStack.push(game.history.getCurrentNode()); break; // begin branch
-                case "R": game.resign(); break;
+                case "P": currNode = currNode.addNewNextNode(POS_PASS); break;
+                case "B": nodeStack.push(currNode); break; // begin branch
+                case "R": currNode = currNode.addNewNextNode(POS_RESIGN); break;
                 case "S": procSetup(); break;
                 default: return null;
                 }
@@ -2347,24 +2487,22 @@ class HistoryTreeString {
             else if(prefix == "."){
                 // end branch
                 if(nodeStack.length == 0){
-                    game.history.undoAll(board, game);
-                    return game; //end of tree
+                    break; //end of tree
                 }
                 else{
-                    game.history.undoTo(nodeStack.pop(), board, game);
+                    currNode = nodeStack.pop();
                 }
             }
+            else{
+                console.log("unknown prefix " + prefix);
+                return null;
+            }
         }
-        return game;
+        return new Game(w, h, rootNode);
 
         function procSetup(){
-            // Add new empty node
-            if(! (game.history.getCurrentNode().isRoot() && nodeStack.length == 0)){
-                game.history.pushSetupNode(); ///@todo keep koPos? or not?
-            }
-            // Add setup property
-            const setup = game.history.getCurrentNode().acquireSetup();
             // setup intersections
+            const posLists = [[], [], []];
             if(scan() == "I"){
                 get();
                 const states = [EMPTY, BLACK, WHITE];
@@ -2377,10 +2515,8 @@ class HistoryTreeString {
                             break;
                         }
                         const pos = readPos();
-                        if(board.isValidPosition(pos)){
-                            const oldState = board.getAt(pos);
-                            setup.addIntersectionChange(pos, oldState, newState);
-                            game.setIntersectionStateForced(pos, newState);
+                        if(isValidPosition(pos, w, h)){
+                            posLists[si].push(pos);
                         }
                     }
                     // rectangles
@@ -2391,31 +2527,37 @@ class HistoryTreeString {
                         }
                         const posLeftTop = readPos();
                         const posRightBottom = readPos();
-                        const left = board.toX(posLeftTop);
-                        const top = board.toY(posLeftTop);
-                        const right = board.toX(posRightBottom);
-                        const bottom = board.toY(posRightBottom);
+                        const left = posLeftTop % w; //toX
+                        const top = posLeftTop / w | 0; //toY
+                        const right = posRightBottom % w; //toX
+                        const bottom = posRightBottom / w | 0; //toY
                         for(let y = top; y <= bottom; ++y){
                             for(let x = left; x <= right; ++x){
-                                const pos = board.toPosition(x, y);
-                                const oldState = board.getAt(pos);
-                                setup.addIntersectionChange(pos, oldState, newState);
-                                game.setIntersectionStateForced(pos, newState);
+                                const pos = toPosition(x, y, w);
+                                posLists[si].push(pos);
                             }
                         }
                     }
                 }
             }
             // setup turn
+            let newTurn = null;
             if(scan() == "T"){
                 get();
-                const newTurn = get() == "B" ? BLACK : WHITE;
-                const oldTurn = game.getTurn();
-                setup.setTurnChange(oldTurn, newTurn);
-                game.setTurnForced(newTurn);
+                newTurn = get() == "B" ? BLACK : WHITE;
             }
             if(get() != "-" || get() != "-"){
                 throw new Error("setup node not terminated");
+            }
+            // Set changes to setup node
+            ///@todo keep koPos? or not?
+            const changes = new BoardChanges(posLists[1], posLists[2], posLists[0], null, newTurn, null, null);
+            if(currNode.isRoot() && nodeStack.length == 0){
+                currNode.setSetup(changes);
+            }
+            else{
+                currNode = currNode.addNewNextNode(NPOS);
+                currNode.setSetup(changes);
             }
         }
     }
@@ -2446,22 +2588,30 @@ class HistoryTreeString {
                 break;
             }
         }
-
-        // Create Game object
         const w = boardSize[0];
         const h = boardSize.length >= 2 ? boardSize[1] : w;
-        const game = new Game(w, h);
 
-        // represent all moves & create history tree
-        processTree(rootTree, 0);
+        // Create Game Tree
+        const gameRootNode = processTree(rootTree, 0, null, BLACK);
+
+        // Create Game object
+        const game = new Game(w, h, gameRootNode);
         return game;
 
-        function processTree(tree, startIndex){
+        function processTree(tree, startIndex, prevNode, turn){
+            let firstNode = null;
             for(let ni = startIndex; ni < tree.nodes.length; ++ni){
                 const nodeProps = tree.nodes[ni];
                 // process node
                 let moved = false;
-                let setup = false;
+                let setup = null;
+                const currNode = new HistoryNode(prevNode, NPOS);
+                if(prevNode){
+                    prevNode.nexts.push(currNode);
+                }
+                if(!firstNode){
+                    firstNode = currNode;
+                }
                 for(const prop of nodeProps){
                     const pid = prop.propIdent;
                     const pvalues = prop.propValues;
@@ -2479,23 +2629,17 @@ class HistoryTreeString {
                             moved = true;
                             const move = pvalues[0];
                             const color = pid == "B" ? BLACK : WHITE;
-                            if(game.getTurn() != color){
+                            if(color != turn){
                                 // 詰碁のSGFでPLなしにWから始まるものがあるので初手だけは許可する。
-                                if( game.getMoveNumber() > 0){
+                                if(!prevNode || !prevNode.isRoot()){
                                     throw new Error("Unexpected player change " + pid + " " + move);
                                 }
-                                game.history.getCurrentNode().acquireSetup().setTurnChange(game.getTurn(), color); //着手前なのでおそらくルートノード
-                                game.setTurnForced(color);
+                                prevNode.acquireSetup().setTurnChange(color); //着手前なのでおそらくルートノード
+                                turn = color;
                             }
                             const pos = parseSGFMove(move, w, h);
-                            if(pos == POS_PASS){
-                                game.pass();
-                            }
-                            else{
-                                if(!game.putStone(pos)){
-                                    throw new Error("SGF includes a illegal move at " + move);
-                                }
-                            }
+                            currNode.setPos(pos); //POS_PASS or 0~w*h-1
+                            turn = getOppositeColor(color);
                         }
                         break;
                     // Setup Properties
@@ -2506,14 +2650,10 @@ class HistoryTreeString {
                         if(moved){
                             throw new Error("Cannot mix setup properties and move properties");
                         }
-                        // prepare setup property(BoardDiff)
+                        // prepare setup property(BoardChanges)
                         if(!setup){
-                            // add node
-                            if(!game.history.getCurrentNode().isSetup()){
-                                game.history.pushSetupNode(); ///@todo keep koPos? or not?
-                            }
                             // add setup property
-                            setup = game.history.getCurrentNode().acquireSetup();
+                            setup = currNode.acquireSetup();
                         }
                         if(pid == "AB" || pid == "AW" || pid == "AE"){
                             //change intersection
@@ -2521,10 +2661,8 @@ class HistoryTreeString {
                                 const points = parseSGFComposedPoint(value, w, h);
                                 for(const pos of points){
                                     if(isValidPosition(pos, w, h)){
-                                        const oldState = game.board.getAt(pos);
                                         const newState = pid == "AB" ? BLACK : pid == "AW" ? WHITE : EMPTY;
-                                        setup.addIntersectionChange(pos, oldState, newState);
-                                        game.setIntersectionStateForced(pos, newState);
+                                        setup.addIntersectionChange(pos, newState);
                                     }
                                 }
                             }
@@ -2535,14 +2673,12 @@ class HistoryTreeString {
                             if(newTurn == EMPTY){
                                 throw new Error("Invalid color " + pid + " " + pvalues[0]);
                             }
-                            const oldTurn = game.getTurn();
-                            setup.setTurnChange(oldTurn, newTurn);
-                            game.setTurnForced(newTurn);
+                            setup.setTurnChange(newTurn);
                         }
                         break;
                     // Node Annotation Properties
                     case "C":
-                        game.setCommentToCurrentNode(parseSGFText(pvalues[0]));
+                        currNode.setComment(parseSGFText(pvalues[0]));
                         break;
                     // Markup Properties
                     case "MA":
@@ -2550,8 +2686,7 @@ class HistoryTreeString {
                     case "SQ":
                     case "TR":
                         {
-                            const node = game.history.getCurrentNode();
-                            const marks = node.acquireProperty("marks", []).value;
+                            const marks = currNode.acquireProperty("marks", []).value;
                             const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
                             for(const point of points){
                                 marks.push({
@@ -2565,8 +2700,7 @@ class HistoryTreeString {
                         break;
                     case "LB":
                         {
-                            const node = game.history.getCurrentNode();
-                            const marks = node.acquireProperty("marks", []).value;
+                            const marks = currNode.acquireProperty("marks", []).value;
                             for(const value of pvalues){
                                 const valuePointText = splitSGFCompose(value);
                                 const point = parseSGFPoint(valuePointText[0], w, h);
@@ -2579,7 +2713,7 @@ class HistoryTreeString {
                     case "VW":
                         {
                             const points = pvalues.map(value=>(value != "") ? parseSGFComposedPoint(value, w, h) : []).reduce((acc, curr)=>acc.concat(curr));
-                            game.history.setPropertyToCurrentNode("VW", points, true); //inherit (to subsequences, subtrees)
+                            currNode.addProperty("VW", points, true); //inherit (to subsequences, subtrees)
                         }
                         break;
                     default:
@@ -2590,24 +2724,22 @@ class HistoryTreeString {
                                 const value = propType.type == "text" ? parseSGFText(pvalues[0]) :
                                       // number, real, simpletext
                                       parseSGFSimpleText(pvalues[0]);
-                                game.history.getRootNode().addProperty(pid, value);
+                                currNode.getRoot().addProperty(pid, value);
                             }
                         }
                         break;
                     }
                 }
+                prevNode = currNode;
             }
 
             // represent branches
             for(let bi = 0; bi < tree.subtrees.length; ++bi){
                 const branchTree = tree.subtrees[bi];
-                processTree(branchTree, 0);
+                processTree(branchTree, 0, prevNode, turn);
             }
 
-            // undo moves
-            for(let ni = startIndex; ni < tree.nodes.length; ++ni){
-                game.undo();
-            }
+            return firstNode;
         }
     }
 }

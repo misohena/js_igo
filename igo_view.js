@@ -11,7 +11,7 @@ const POS_PASS = igo.POS_PASS;
 const POS_RESIGN = igo.POS_RESIGN;
 const Game = igo.Game;
 const getOppositeColor = igo.getOppositeColor;
-const BoardDiff = igo.BoardDiff;
+const BoardChanges = igo.BoardChanges;
 
 function clamp(x, xmin, xmax){
     return x < xmin ? xmin : x > xmax ? xmax : x;
@@ -1641,7 +1641,7 @@ class GameView{
             this.update();
         });
         updators.push(()=>{
-            button.disabled = !this.model.history.getCurrentNode().lastVisited || this.isPreventedRedo();
+            button.disabled = !this.model.history.getCurrentNode().getNextNodeDefault() || this.isPreventedRedo();
         });
         return button;
     }
@@ -1655,7 +1655,7 @@ class GameView{
             this.update();
         });
         updators.push(()=>{
-            button.disabled = !this.model.history.getCurrentNode().lastVisited || this.isPreventedRedo();
+            button.disabled = !this.model.history.getCurrentNode().getNextNodeDefault() || this.isPreventedRedo();
         });
         return button;
     }
@@ -2288,8 +2288,12 @@ class GameView{
                     this.alternately = false;
                     gameView.hideMoveModeUI();
                     gameView.boardElement.setStonePointerEventsEnabled(false); //石が盤面上のmouse/touchイベントを邪魔しないようにする
-                    //開始時点の盤面、手番
-                    this.oldBoard = gameView.model.board.clone();
+                    //基準となる盤面、手番
+                    const currNode = gameView.model.history.getCurrentNode();
+                    this.oldBoard =
+                        currNode.isSetup() ?
+                        gameView.model.getPreviousBoard() :
+                        gameView.model.board.clone();
                 }
             }
             end(){
@@ -2301,19 +2305,15 @@ class GameView{
                     gameView.boardElement.setStonePointerEventsEnabled(true);
 
                     // update setup property
-                    let boardChanges = BoardDiff.diff(this.oldBoard, gameView.model.board);
+                    const boardChanges = BoardChanges.diffBoard(
+                        gameView.model.board, this.oldBoard);
 
-                    let currNode = gameView.model.history.getCurrentNode();
-                    const oldSetup = currNode.getSetup();
-                    if(oldSetup){
-                        // merge changes
-                        boardChanges = BoardDiff.merge(oldSetup, boardChanges);
-                    }
+                    const currNode = gameView.model.history.getCurrentNode();
 
-                    if((!boardChanges.intersections || boardChanges.intersections.length == 0) && (!boardChanges.turn || boardChanges.turn.oldTurn == boardChanges.turn.newTurn)){
-                        if(oldSetup){
+                    if(boardChanges.isEmpty()){
+                        if(currNode.getSetup()){
                             currNode.removeSetup();
-                            if(currNode.isEmpty() && !currNode.isRoot()){
+                            if(currNode.isRemovable() && !currNode.isRoot()){
                                 gameView.model.undo();
                                 currNode.removeThisNodeOnly();
                                 alert("Setup用のノードを削除しました。");
@@ -2322,10 +2322,17 @@ class GameView{
                     }
                     else{
                         if( ! currNode.isSetup()){
-                            currNode = gameView.model.history.pushSetupNode();
+                            const boardUndo = BoardChanges.createUndoChanges(
+                                boardChanges, this.oldBoard);
+                            gameView.model.history.pushSetupNode(
+                                boardChanges, boardUndo);
                             alert("Setup用のノードを追加しました。");
                         }
-                        currNode.setSetup(boardChanges);
+                        else{
+                            gameView.model.undo();
+                            currNode.setSetup(boardChanges);
+                            gameView.model.redo();
+                        }
                     }
                     gameView.update();
                 }
@@ -2744,7 +2751,7 @@ function createGameFromQuery(){
                 const oldState = game.board.getAt(pos);
                 const newState = intersections[pos];
                 if(oldState != newState){
-                    setup.addIntersectionChange(pos, oldState, newState);
+                    setup.addIntersectionChange(pos, newState);
                     game.board.setAt(pos, newState);
                 }
             }
@@ -2754,7 +2761,7 @@ function createGameFromQuery(){
             const newTurn = turn;
             if(oldTurn != newTurn){
                 const setup = game.history.getRootNode().acquireSetup();
-                setup.setTurnChange(oldTurn, newTurn);
+                setup.setTurnChange(newTurn);
                 game.board.setTurn(newTurn);
             }
         }
