@@ -1086,6 +1086,13 @@ class HistoryTree{
         this.undoStack.push(boardUndo);
     }
 
+    setLastUndo(boardUndo){
+        if(this.undoStack.length > 0){
+            this.undoStack.pop();
+            this.undoStack.push(boardUndo);
+        }
+    }
+
     // Undo/Redo
 
     undo(game){

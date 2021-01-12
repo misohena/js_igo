@@ -2321,17 +2321,22 @@ class GameView{
                         }
                     }
                     else{
+                        const boardUndo = BoardChanges.createUndoChanges(
+                            boardChanges, this.oldBoard);
                         if( ! currNode.isSetup()){
-                            const boardUndo = BoardChanges.createUndoChanges(
-                                boardChanges, this.oldBoard);
                             gameView.model.history.pushSetupNode(
                                 boardChanges, boardUndo);
                             alert("Setup用のノードを追加しました。");
                         }
                         else{
-                            gameView.model.undo();
-                            currNode.setSetup(boardChanges);
-                            gameView.model.redo();
+                            // Update undo stack and setup property
+                            if(currNode.isRoot()){
+                                currNode.setSetup(boardChanges);
+                            }
+                            else{
+                                currNode.setSetup(boardChanges);
+                                gameView.model.history.setLastUndo(boardUndo);
+                            }
                         }
                     }
                     gameView.update();
