@@ -175,41 +175,64 @@ class Board{
 
     // Move
 
-    pass(history){
+    pass(color, history, allowIllegalMove){
+        if(color === undefined){color = this.turn;}
+
+        if(!allowIllegalMove && color != this.turn){
+            return false;
+        }
+
         const koPosOld = this.koPos;
         this.koPos = NPOS;
 
         const turnOld = this.turn;
-        this.rotateTurn();
+        this.setTurn(getOppositeColor(color));
 
         if(history){
-            history.pushPass(koPosOld, turnOld);
+            history.pushPass(color, koPosOld, turnOld);
         }
+        return true;
     }
 
-    putStone(pos, color, history){
-        if( ! this.isMoveLegal(pos, color)){
+    putStone(pos, color, history, allowIllegalMove){
+        if(color === undefined){color = this.turn;}
+
+        if( !allowIllegalMove && ! this.isMoveLegal(pos, color)){
             return false;
         }
+        // Illegal move behavior is based on the SGF specification:
+        //   SGF FF[5] - Move vs. Adding Stones
+        //   https://www.red-bean.com/sgf/ff5/m_vs_ax.htm
+
+        // Put COLOR's stone at POS
+        const istateOld = this.getAt(pos);
         this.setAt(pos, color);
 
+        // Remove captured stones
         const removedStonesArray = history ? [] : null;
         const removedStonesCount
               = this.removeStringIfSurrounded(this.leftOf(pos), color, removedStonesArray)
               + this.removeStringIfSurrounded(this.above(pos), color, removedStonesArray)
               + this.removeStringIfSurrounded(this.rightOf(pos), color, removedStonesArray)
               + this.removeStringIfSurrounded(this.below(pos), color, removedStonesArray);
-
         this.addPrisoners(getOppositeColor(color), removedStonesCount);
 
+        // Remove suicide stones
+        const suicideStonesArray = history ? [] : null;
+        const suicideStonesCount = allowIllegalMove ?
+              this.removeStringIfSurrounded(pos, getOppositeColor(color), suicideStonesArray) : 0;
+        this.addPrisoners(color, suicideStonesCount);
+
+        // Change ko-pos
         const koPosOld = this.koPos;
         this.koPos = this.getNewKoPosition(pos, color, removedStonesCount);
 
+        // Rotate turn
         const turnOld = this.turn;
-        this.rotateTurn();
+        this.setTurn(getOppositeColor(color));//not opposite turn, if allow illegal moves
 
         if(history){
-            history.pushPlace(pos, removedStonesArray, koPosOld, turnOld);
+            history.pushPlace(pos, color, istateOld, removedStonesArray, suicideStonesArray, koPosOld, turnOld);
         }
         return true;
     }
@@ -646,15 +669,39 @@ class BoardChanges {
             new Board(toBoard.w, toBoard.h));
     }
 
-    static createUndoMove(color, pos, removedStones, koPosOld){
+    static createUndoMove(color, pos, istateOld, removedStones, suicideStones, koPosOld, turnOld){
+        const numBlackPrisoners = color == BLACK ? suicideStones.length : removedStones.length;
+        const numWhitePrisoners = color == WHITE ? suicideStones.length : removedStones.length;
+
+        // Remove pos from suicideStones and guess current istate at pos
+        const indexPos = suicideStones.indexOf(pos);
+        if(indexPos >= 0){
+            suicideStones.splice(indexPos);
+        }
+        const istateNew = indexPos >= 0 ? EMPTY : color;
+
+        // Make pos list
+        const blackPosList = color == BLACK ? suicideStones : removedStones;
+        const whitePosList = color == WHITE ? suicideStones : removedStones;
+        const emptyPosList = [];
+
+        // Restore istate at pos
+        if(istateNew != istateOld){
+            switch(istateOld){
+            case BLACK: blackPosList.push(pos); break;
+            case WHITE: whitePosList.push(pos); break;
+            case EMPTY: emptyPosList.push(pos); break;
+            }
+        }
+
         return new BoardChanges(
-            (color==WHITE ? removedStones : null),
-            (color==BLACK ? removedStones : null),
-            [pos],
+            blackPosList,
+            whitePosList,
+            emptyPosList,
             koPosOld,
-            color,
-            (color==WHITE && removedStones ? -removedStones.length : 0),
-            (color==BLACK && removedStones ? -removedStones.length : 0)
+            turnOld, // Not necessarily the same as COLOR if allow illegal moves
+            (numBlackPrisoners > 0 ? -numBlackPrisoners : null),
+            (numWhitePrisoners > 0 ? -numWhitePrisoners : null)
         );
     }
 
@@ -674,26 +721,27 @@ igo.BoardChanges = BoardChanges;
 //
 
 class HistoryNode{
-    addNewNextNode(pos){
-        const newNode = new HistoryNode(this, pos);
+    addNewNextNode(pos, color){
+        const newNode = new HistoryNode(this, pos, color);
         this.nexts.push(newNode);
         return newNode;
     }
 
-    constructor(prev, pos){
+    constructor(prev, pos, color){
         // tree
         this.prev = prev;
         this.nexts = [];
         this.lastVisited = null; //?
         // move
         this.pos = pos;
+        this.color = color;
         // properties
         //this.comment = <string>
         //this.props = {<id>: {value:<value>, inherit:<boolean>}, ...}
         //this.setup = BoardChanges
     }
     shallowClone(){
-        const node = new HistoryNode(this.prev, this.pos);
+        const node = new HistoryNode(this.prev, this.pos, this.color);
         node.nexts = this.nexts;
         node.lastVisited = this.lastVisited;
         if(this.comment !== undefined){node.comment = this.comment;}
@@ -728,7 +776,11 @@ class HistoryNode{
 
     // Node Types
     getPos(){return this.pos;}
-    setPos(pos){this.pos = pos;}
+    getColor(){return this.color;}
+    setPosAndColor(pos, color){
+        this.pos = pos;
+        this.color = color;
+    }
 
     isPass(){return this.pos == POS_PASS;}
     isResign(){return this.pos == POS_RESIGN;}
@@ -741,7 +793,7 @@ class HistoryNode{
             return false;
         }
         const move = this.getPreviousMove(); //skip setup nodes
-        return move && move.isPass();
+        return move && move.isPass() && move.getColor() != this.getColor();
     }
 
     // Prev Node
@@ -802,7 +854,7 @@ class HistoryNode{
             (this.nexts.length >= 1 ? this.nexts[0] : null);
     }
 
-    findNextByPos(pos){return this.nexts.find(node=>node.pos == pos);}
+    findNextByMove(pos, color){return this.nexts.find(node=>node.pos == pos && node.color === color);}
     indexOfNext(node){return this.nexts.indexOf(node);}
     deleteNext(node){
         const index = this.nexts.indexOf(node);
@@ -1007,14 +1059,14 @@ class HistoryNode{
 class HistoryTree{
     constructor(rootNodeOpt){
         this.moveNumber = 0;
-        this.pointer = this.first = (rootNodeOpt || new HistoryNode(null, NPOS)); //root node
+        this.pointer = this.first = (rootNodeOpt || new HistoryNode(null, NPOS, null)); //root node
         this.undoStack = [];
     }
     getCurrentNode(){return this.pointer;}
     getNextNodes(){return this.pointer ? this.pointer.nexts : [];}
     getPreviousNode(){return this.pointer.prev;}
     getRootNode(){return this.first;}
-    findNextNodeByPos(pos){return this.pointer.findNextByPos(pos);}
+    findNextNodeByMove(pos, color){return this.pointer.findNextByMove(pos, color);}
 
     setCommentToCurrentNode(text){
         this.pointer.setComment(text);
@@ -1041,40 +1093,43 @@ class HistoryTree{
 
     // Move
 
-    pushPass(koPosOld, turnOld){
-        this._pushMoveOrResign(POS_PASS, new BoardChanges(null, null, null, koPosOld, turnOld));
+    pushPass(color, koPosOld, turnOld){
+        this._pushMoveOrResign(POS_PASS, color, new BoardChanges(null, null, null, koPosOld, turnOld));
     }
-    pushResign(){
-        this._pushMoveOrResign(POS_RESIGN, null); //keep koPos, do not rotate a turn
+    pushResign(color){
+        this._pushMoveOrResign(POS_RESIGN, color, null); //keep koPos, do not rotate a turn
     }
-    pushPlace(pos, removedStones, koPosOld, turnOld){
-        this._pushMoveOrResign(pos, BoardChanges.createUndoMove(turnOld, pos, removedStones, koPosOld));
+    pushPlace(pos, color, istateOld, removedStones, suicideStones, koPosOld, turnOld){
+        this._pushMoveOrResign(
+            pos, color,
+            BoardChanges.createUndoMove(
+                color, pos, istateOld, removedStones, suicideStones, koPosOld, turnOld));
     }
-    _pushMoveOrResign(pos, boardUndo){
+    _pushMoveOrResign(pos, color, boardUndo){
         // exclude NPOS (setup node)
         // node can have multiple setup nodes
         if(pos == NPOS){
             return; // use pushSetupNode()
         }
-        const nodeSamePos = this.pointer.findNextByPos(pos);
+        const nodeSamePos = this.pointer.findNextByMove(pos, color);
         if(nodeSamePos){ //place, pass, resign
             // select nodeSamePos
             this._selectNextNode(nodeSamePos, boardUndo);
         }
         else{
-            this._pushNewNode(pos, boardUndo);
+            this._pushNewNode(pos, color, boardUndo);
         }
         if(isIntersectionPosition(pos) || pos == POS_PASS){ //exclude NPOS, POS_RESIGN
             ++this.moveNumber;
         }
     }
     pushSetupNode(changes, boardUndo){
-        const node = this._pushNewNode(NPOS, boardUndo);
+        const node = this._pushNewNode(NPOS, null, boardUndo);
         node.setSetup(changes);
         return node;
     }
-    _pushNewNode(pos, boardUndo){
-        const newNode = this.pointer.addNewNextNode(pos);
+    _pushNewNode(pos, color, boardUndo){
+        const newNode = this.pointer.addNewNextNode(pos, color);
         this._selectNextNode(newNode, boardUndo);
         return newNode;
     }
@@ -1127,13 +1182,13 @@ class HistoryTree{
             return false;
         }
         else if(nextNode.isPass()){
-            return game.pass();
+            return game.pass(nextNode.getColor(), true); //allowIllegalMove
         }
         else if(nextNode.isResign()){
-            return game.resign();
+            return game.resign(nextNode.getColor(), true); //allowIllegalMove
         }
         else if(nextNode.isPlace()){
-            return game.putStone(nextNode.getPos());
+            return game.putStone(nextNode.getPos(), nextNode.getColor(), true); //allowIllegalMove
         }
         else if(nextNode.isSetup()){
             const changes = nextNode.getSetup();
@@ -1258,28 +1313,35 @@ class Game{
     getTurn(){return this.board.getTurn();}
     getPrisoners(color){return this.board.getPrisoners(color);}
 
-    pass(){
+    pass(color, allowIllegalMove){
+        if(color === undefined){ color = this.board.getTurn();}
         if( ! this.finished){
-            this.board.pass(this.history);
-
-            if(this.history.getCurrentNode().isSecondConsecutivePass()){
-                this.setFinished(EMPTY); ///@todo 勝敗の判定！
+            if(this.board.pass(color, this.history, allowIllegalMove)){
+                if(this.history.getCurrentNode().isSecondConsecutivePass()){
+                    this.setFinished(EMPTY); ///@todo 勝敗の判定！
+                }
+                return true;
             }
         }
+        return false;
     }
-    putStone(pos){
+    putStone(pos, color, allowIllegalMove){
+        if(color === undefined){ color = this.board.getTurn();}
         if( ! this.finished){
-            return this.board.putStone(pos, this.board.getTurn(), this.history);
+            return this.board.putStone(pos, color, this.history, allowIllegalMove);
         }
         else{
             return false;
         }
     }
-    resign(){
-        if( ! this.finished){
-            this.setFinished(getOppositeColor(this.getTurn()));
-            this.history.pushResign(); //keep koPos, do not rotate a turn
+    resign(color, allowIllegalMove){
+        if(color === undefined){ color = this.board.getTurn();}
+        if( ! this.finished && (allowIllegalMove || color == this.board.getTurn())){
+            this.setFinished(getOppositeColor(color));
+            this.history.pushResign(color); //keep koPos, do not rotate a turn
+            return true;
         }
+        return false;
     }
 
     // Foeced Change (for setup properties)
@@ -1751,9 +1813,9 @@ class HistoryTreeFormatter{
     toString(){}
     beginTree(turn){}
     endTree(turn){}
-    putResign(turn){}
-    putPass(turn){}
-    putPlace(pos, turn){}
+    putResign(turn, color){}
+    putPass(turn, color){}
+    putPlace(turn, pos, color){}
     putSetupNode(node, turn){}
     putSetupProperty(setup, turn){}
     putMarks(marks){}
@@ -1769,6 +1831,7 @@ const HTS_CMD_SPECIAL = 3;
 const HTS_CMD_UPPER = 4;
 const HTS_SUBCMD_RESIGN = 1;
 const HTS_SUBCMD_SETUP = 2;
+const HTS_SUBCMD_ROTATE_TURN = 3;
 const HTS_BITWIDTH_SUBCMD = 6;
 
 class HistoryTreeBase64Formatter extends HistoryTreeFormatter{
@@ -1792,6 +1855,12 @@ class HistoryTreeBase64Formatter extends HistoryTreeFormatter{
         this.bitWriter.put(subcmd, HTS_BITWIDTH_SUBCMD);
     }
 
+    putTurnRotationIfMismatch(turn, color){
+        if(turn != color){
+            this.putSubCmd(HTS_SUBCMD_ROTATE_TURN);
+        }
+    }
+
     // override
 
     toString(){
@@ -1800,9 +1869,9 @@ class HistoryTreeBase64Formatter extends HistoryTreeFormatter{
 
     beginTree(turn){}//ルートのbeginBranch()は省略。
     endTree(turn){this.endBranch(turn);}//終端のために必要
-    putPlace(pos, turn){this.putPos(pos);}
-    putPass(turn){this.putCmd(HTS_CMD_PASS);}
-    putResign(turn){this.putSubCmd(HTS_SUBCMD_RESIGN);}
+    putPlace(turn, pos, color){this.putTurnRotationIfMismatch(turn, color); this.putPos(pos);}
+    putPass(turn, color){this.putTurnRotationIfMismatch(turn, color); this.putCmd(HTS_CMD_PASS);}
+    putResign(turn, color){this.putTurnRotationIfMismatch(turn, color); this.putSubCmd(HTS_SUBCMD_RESIGN);}
     beginBranch(node, turn){this.putCmd(HTS_CMD_BEGIN_BRANCH);}
     endBranch(node, turn){this.putCmd(HTS_CMD_END_BRANCH);}
 
@@ -1865,6 +1934,13 @@ class HistoryTreeHumanReadableFormatter extends HistoryTreeFormatter{
         switch(subcmd){
         case HTS_SUBCMD_RESIGN: this.str += "-R"; break;
         case HTS_SUBCMD_SETUP: this.str += "-S"; break;
+        case HTS_SUBCMD_ROTATE_TURN: this.str += "-T"; break;
+        }
+    }
+
+    putTurnRotationIfMismatch(turn, color){
+        if(turn != color){
+            this.putSubCmd(HTS_SUBCMD_ROTATE_TURN);
         }
     }
 
@@ -1876,9 +1952,9 @@ class HistoryTreeHumanReadableFormatter extends HistoryTreeFormatter{
 
     beginTree(turn){}//ルートのbeginBranch()は省略。
     endTree(turn){this.endBranch(turn);}//終端のために必要
-    putPlace(pos, turn){this.str += "_"; this.putPos(pos);}
-    putPass(turn){this.putCmd(HTS_CMD_PASS);}
-    putResign(turn){this.putSubCmd(HTS_SUBCMD_RESIGN);}
+    putPlace(turn, pos, color){this.putTurnRotationIfMismatch(turn, color); this.str += "_"; this.putPos(pos);}
+    putPass(turn, color){this.putTurnRotationIfMismatch(turn, color); this.putCmd(HTS_CMD_PASS);}
+    putResign(turn, color){this.putTurnRotationIfMismatch(turn, color); this.putSubCmd(HTS_SUBCMD_RESIGN);}
     beginBranch(node, turn){this.putCmd(HTS_CMD_BEGIN_BRANCH);}
     endBranch(node, turn){this.putCmd(HTS_CMD_END_BRANCH);}
 
@@ -1944,14 +2020,14 @@ class HistoryTreeSGFFormatter extends HistoryTreeFormatter {
         this.str += ")";
     }
 
-    putResign(turn){
+    putResign(turn, color){
         // ignore
     }
-    putPass(turn){
-        this.str += ";" + toSGFColor(turn) +"[]";
+    putPass(turn, color){
+        this.str += ";" + toSGFColor(color) +"[]";
     }
-    putPlace(pos, turn){
-        this.str += ";" + toSGFColor(turn) + "[" + toSGFPoint(pos, this.board) + "]";
+    putPlace(turn, pos, color){
+        this.str += ";" + toSGFColor(color) + "[" + toSGFPoint(pos, this.board) + "]";
     }
     putSetupNode(node, turn){
         this.str += ";";
@@ -2084,15 +2160,15 @@ class HistoryTreeString {
 
         function putNode(node){
             if(node.isResign()){
-                format.putResign(turn);
+                format.putResign(turn, node.getColor());
             }
             else if(node.isPass()){
-                format.putPass(turn);
-                turn = getOppositeColor(turn);
+                format.putPass(turn, node.getColor());
+                turn = getOppositeColor(node.getColor());
             }
             else if(node.isPlace()){
-                format.putPlace(node.pos, turn);
-                turn = getOppositeColor(turn);
+                format.putPlace(turn, node.pos, node.getColor());
+                turn = getOppositeColor(node.getColor());
             }
             else{
                 format.putSetupNode(node, turn);
@@ -2137,20 +2213,27 @@ class HistoryTreeString {
         function readSubCmd() {return bitReader.get(HTS_BITWIDTH_SUBCMD);}
         function read1Bit() {return bitReader.get(1);}
 
-        const rootNode = new HistoryNode(null, NPOS);
+        const rootNode = new HistoryNode(null, NPOS, null);
         let currNode = rootNode;
+        let currTurn = BLACK;
         const nodeStack = [];
+        const turnStack = [];
         for(;;){
             const pos = readPos();
             if(pos >= 0 && pos < boardSize){
-                currNode = currNode.addNewNextNode(pos);
+                currNode = currNode.addNewNextNode(pos, currTurn);
+                currTurn = getOppositeColor(currTurn);
             }
             else{
                 const cmd = pos - boardSize;
                 switch(cmd){
-                case HTS_CMD_PASS: currNode = currNode.addNewNextNode(POS_PASS); break;
+                case HTS_CMD_PASS:
+                    currNode = currNode.addNewNextNode(POS_PASS, currTurn);
+                    currTurn = getOppositeColor(currTurn);
+                    break;
                 case HTS_CMD_BEGIN_BRANCH:
                     nodeStack.push(currNode);
+                    turnStack.push(currTurn);
                     break;
                 case HTS_CMD_END_BRANCH:
                     if(nodeStack.length == 0){
@@ -2159,14 +2242,16 @@ class HistoryTreeString {
                     }
                     else{
                         currNode = nodeStack.pop();
+                        currTurn = turnStack.pop();
                     }
                     break;
                 case HTS_CMD_SPECIAL:
                     {
                         const subcmd = readSubCmd();
                         switch(subcmd){
-                        case HTS_SUBCMD_RESIGN: currNode = currNode.addNewNextNode(POS_RESIGN); break;
+                        case HTS_SUBCMD_RESIGN: currNode = currNode.addNewNextNode(POS_RESIGN, currTurn); break;
                         case HTS_SUBCMD_SETUP: procSetup(); break;
+                        case HTS_SUBCMD_ROTATE_TURN: currTurn = getOppositeColor(currTurn); break;
                         default:
                             console.log("unknown subcmd " + subcmd);
                             return null; //unknown subcmd
@@ -2222,6 +2307,7 @@ class HistoryTreeString {
             let newTurn = null;
             if(read1Bit() != 0){
                 newTurn = read1Bit() == 0 ? BLACK : WHITE;
+                currTurn = newTurn;
             }
 
             // Set changes to setup node
@@ -2231,7 +2317,7 @@ class HistoryTreeString {
                 currNode.setSetup(changes);
             }
             else{
-                currNode = currNode.addNewNextNode(NPOS);
+                currNode = currNode.addNewNextNode(NPOS, null);
                 currNode.setSetup(changes);
             }
         }
@@ -2247,22 +2333,29 @@ class HistoryTreeString {
             return parseSGFPoint(c1 + c2, w, h);
         }
 
-        const rootNode = new HistoryNode(null, NPOS);
+        const rootNode = new HistoryNode(null, NPOS, null);
         let currNode = rootNode;
+        let currTurn = BLACK;
         const nodeStack = [];
+        const turnStack = [];
         for(;;){
             const prefix = get();
             if(prefix == "_"){
                 const pos = readPos();
-                currNode = currNode.addNewNextNode(pos);
+                currNode = currNode.addNewNextNode(pos, currTurn);
+                currTurn = getOppositeColor(currTurn);
             }
             else if(prefix == "-"){
                 const cmd = get();
                 switch(cmd){
-                case "P": currNode = currNode.addNewNextNode(POS_PASS); break;
+                case "P":
+                    currNode = currNode.addNewNextNode(POS_PASS, currTurn);
+                    currTurn = getOppositeColor(currTurn);
+                    break;
                 case "B": nodeStack.push(currNode); break; // begin branch
-                case "R": currNode = currNode.addNewNextNode(POS_RESIGN); break;
+                case "R": currNode = currNode.addNewNextNode(POS_RESIGN, currTurn); break;
                 case "S": procSetup(); break;
+                case "T": currTurn = getOppositeColor(currTurn); break;
                 default: return null;
                 }
             }
@@ -2327,6 +2420,7 @@ class HistoryTreeString {
             if(scan() == "T"){
                 get();
                 newTurn = get() == "B" ? BLACK : WHITE;
+                currTurn = newTurn;
             }
             if(get() != "-" || get() != "-"){
                 throw new Error("setup node not terminated");
@@ -2338,7 +2432,7 @@ class HistoryTreeString {
                 currNode.setSetup(changes);
             }
             else{
-                currNode = currNode.addNewNextNode(NPOS);
+                currNode = currNode.addNewNextNode(NPOS, null);
                 currNode.setSetup(changes);
             }
         }
@@ -2376,6 +2470,19 @@ class HistoryTreeString {
         // Create Game Tree
         const gameRootNode = processTree(rootTree, 0, null, BLACK);
 
+        // If the first move is WHITE and there is no PL property, add PL property to root node.
+        // Some SGF files have no PL property and WHITE first.
+        ///@todo necessary?
+        if(gameRootNode &&
+           gameRootNode.nexts.length > 0 &&
+           gameRootNode.nexts[0].getColor() == WHITE && //first branch
+           gameRootNode.isSetup()){
+            const initialSetup = gameRootNode.getSetup();
+            if(!initialSetup || typeof initialSetup.turn != "number"){
+                gameRootNode.acquireSetup().setTurnChange(WHITE);
+            }
+        }
+
         // Create Game object
         const game = new Game(w, h, gameRootNode);
         return game;
@@ -2387,7 +2494,7 @@ class HistoryTreeString {
                 // process node
                 let moved = false;
                 let setup = null;
-                const currNode = new HistoryNode(prevNode, NPOS);
+                const currNode = new HistoryNode(prevNode, NPOS, null);
                 if(prevNode){
                     prevNode.nexts.push(currNode);
                 }
@@ -2411,16 +2518,8 @@ class HistoryTreeString {
                             moved = true;
                             const move = pvalues[0];
                             const color = pid == "B" ? BLACK : WHITE;
-                            if(color != turn){
-                                // 詰碁のSGFでPLなしにWから始まるものがあるので初手だけは許可する。
-                                if(!prevNode || !prevNode.isRoot()){
-                                    throw new Error("Unexpected player change " + pid + " " + move);
-                                }
-                                prevNode.acquireSetup().setTurnChange(color); //着手前なのでおそらくルートノード
-                                turn = color;
-                            }
                             const pos = parseSGFMove(move, w, h);
-                            currNode.setPos(pos); //POS_PASS or 0~w*h-1
+                            currNode.setPosAndColor(pos, color); //POS_PASS or 0~w*h-1
                             turn = getOppositeColor(color);
                         }
                         break;

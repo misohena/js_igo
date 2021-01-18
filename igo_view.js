@@ -1198,6 +1198,7 @@ class GameView{
     }
 
     move(pos){
+        const color = this.model.getTurn();
         this.hideMessage();
         if(this.isAutoTurn()){ // current turn is auto player
             const nexts = this.model.history.getNextNodes();
@@ -1210,18 +1211,18 @@ class GameView{
             this.cancelAutoMove();
         }
         if(!this.editable){
-            if(!this.model.history.findNextNodeByPos(pos)){
+            if(!this.model.history.findNextNodeByMove(pos, color)){
                 return; // same move only if not editable
             }
         }
         if(pos == POS_PASS){
-            this.model.pass();
+            this.model.pass(color);
         }
         else if(pos == POS_RESIGN){
-            this.model.resign();
+            this.model.resign(color);
         }
         else{
-            if(!this.model.putStone(pos)){
+            if(!this.model.putStone(pos, color)){
                 this.showMessage("不正な着手です");
             }
         }
@@ -1723,6 +1724,10 @@ class GameView{
         let countOutOfBoard = 0;
         for(let i = 0; i < nexts.length; ++i){
             const node = nexts[i];
+            if((node.isPlace() || node.isPass() || node.isResign()) &&
+               node.getColor() != this.model.getTurn()){
+                continue;
+            }
             if(node.isPlace()){
                 const text =
                       nexts.length == 1 ? "×" :
