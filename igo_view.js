@@ -905,7 +905,7 @@ class GameView{
             sessionStorage.setItem(propName, JSON.stringify(this[propName]));
         }
         // path
-        const path = this.model.history.getCurrentNode().getPathFromRoot(false).join(" ");
+        const path = this.model.getCurrentNode().getPathFromRoot(false).join(" ");
         sessionStorage.setItem("path", path);
     }
     restoreSession(){
@@ -921,7 +921,7 @@ class GameView{
         const pathStr = sessionStorage.getItem("path");
         if(pathStr){
             const dirs = pathStr.split(" ").map(s=>parseInt(s));
-            this.model.redoTo(this.model.history.getRootNode().findByPath(dirs, false));
+            this.model.redoTo(this.model.getRootNode().findByPath(dirs, false));
         }
         // filename (export dialog)
         this.filename = sessionStorage.getItem("filename");
@@ -1094,7 +1094,7 @@ class GameView{
             this.boardElement.setIntersectionState(viewX, viewY, state, true); //forced reset to remove additional elements(i.e. moveNumber)
 
             if(this.showMoveNumber && state != EMPTY){
-                const moveNumber = this.model.history.getMoveNumberAt(pos);
+                const moveNumber = this.model.getMoveNumberAt(pos);
                 if(moveNumber >= 0){
                     this.boardElement.addTextOnStone("moveNumber", viewX, viewY, "" + moveNumber, undefined, 0.55);
                 }
@@ -1110,7 +1110,7 @@ class GameView{
         if(!this.showLastMoveMark){
             return;
         }
-        const node = this.model.history.getCurrentNode();
+        const node = this.model.getCurrentNode();
         if(node && node.isPlace()){ //ignore pass, resign, root node, setup(?) node
             //apply rotate180 setting
             const viewX = this.toBoardElementX(node.pos);
@@ -1132,7 +1132,7 @@ class GameView{
         if(!this.markElements){
             this.markElements = [];
         }
-        const marks = this.model.history.getCurrentNode().getProperty("marks");
+        const marks = this.model.getCurrentNode().getProperty("marks");
         if(marks && marks.value){
             for(const mark of marks.value){
                 //apply rotate180 setting
@@ -1201,7 +1201,7 @@ class GameView{
         const color = this.model.getTurn();
         this.hideMessage();
         if(this.isAutoTurn()){ // current turn is auto player
-            const nexts = this.model.history.getNextNodes();
+            const nexts = this.model.getNextNodes();
             if(nexts.length <= 1){
                 return; //一本道
             }
@@ -1211,7 +1211,7 @@ class GameView{
             this.cancelAutoMove();
         }
         if(!this.editable){
-            if(!this.model.history.findNextNodeByMove(pos, color)){
+            if(!this.model.getCurrentNode().findNextByMove(pos, color)){
                 return; // same move only if not editable
             }
         }
@@ -1247,12 +1247,12 @@ class GameView{
             false;
     }
     scheduleAutoMove(){
-        if(this.isAutoTurn() && this.model.history.getNextNodes().length > 0){
+        if(this.isAutoTurn() && this.model.getNextNodes().length > 0){
             this.autoMoveTimer = setTimeout(()=>{
                 delete this.autoMoveTimer;
                 if(this.isAutoTurn()){
                     // rotate lastVisited
-                    const node = this.model.history.getCurrentNode();
+                    const node = this.model.getCurrentNode();
                     if(!node.lastVisited || node.nexts.length == 1){
                         node.lastVisited = node.nexts[0];
                     }
@@ -1356,7 +1356,7 @@ class GameView{
     }
 
     updateViewArea(){
-        const node = this.model.history.getCurrentNode();
+        const node = this.model.getCurrentNode();
         if(node){
             const points = node.getProperty("VW");
             if(points){
@@ -1617,7 +1617,7 @@ class GameView{
             this.update();
         });
         updators.push(()=>{
-            button.disabled = !this.model.history.getPreviousNode();
+            button.disabled = !this.model.getPreviousNode();
         });
         return button;
     }
@@ -1628,7 +1628,7 @@ class GameView{
             this.update();
         });
         updators.push(()=>{
-            button.disabled = !this.model.history.getPreviousNode();
+            button.disabled = !this.model.getPreviousNode();
         });
         return button;
     }
@@ -1642,7 +1642,7 @@ class GameView{
             this.update();
         });
         updators.push(()=>{
-            button.disabled = !this.model.history.getCurrentNode().getNextNodeDefault() || this.isPreventedRedo();
+            button.disabled = !this.model.getCurrentNode().getNextNodeDefault() || this.isPreventedRedo();
         });
         return button;
     }
@@ -1656,7 +1656,7 @@ class GameView{
             this.update();
         });
         updators.push(()=>{
-            button.disabled = !this.model.history.getCurrentNode().getNextNodeDefault() || this.isPreventedRedo();
+            button.disabled = !this.model.getCurrentNode().getNextNodeDefault() || this.isPreventedRedo();
         });
         return button;
     }
@@ -1699,7 +1699,7 @@ class GameView{
 
     isPreventedRedo(){
         return this.preventRedoAtBranchPoint &&
-            this.model.history.getNextNodes().length >= 2;
+            this.model.getNextNodes().length >= 2;
     }
 
     updateBranchTexts(){
@@ -1713,14 +1713,14 @@ class GameView{
             this.branchTextElements.splice(0);
         }
 
-        if( ! this.showBranches || (this.isAutoTurn() && this.model.history.getNextNodes().length <= 1)){
+        if( ! this.showBranches || (this.isAutoTurn() && this.model.getNextNodes().length <= 1)){
             return;
         }
 
         // this.boardElement.overlaysの下にsvgのtext要素を挿入する。
         const fill = this.model.getTurn() == BLACK ? "#444" : "#eee";
 
-        const nexts = this.model.history.getNextNodes();
+        const nexts = this.model.getNextNodes();
         let countOutOfBoard = 0;
         for(let i = 0; i < nexts.length; ++i){
             const node = nexts[i];
@@ -1786,11 +1786,11 @@ class GameView{
     }
 
     deleteBranch(node){
-        this.model.history.deleteBranch(node);
+        this.model.getCurrentNode().deleteNext(node);
         this.updateBranchTexts();
     }
     changeBranchOrder(node, delta){
-        this.model.history.changeBranchOrder(node, delta);
+        this.model.getCurrentNode().changeNextOrder(node, delta);
         this.updateBranchTexts();
     }
 
@@ -1951,7 +1951,7 @@ class GameView{
     }
 
     openGameInfo(){
-        const rootNode = this.model.history.getRootNode();
+        const rootNode = this.model.getRootNode();
         const inputs = {};
         const dialog = createDialogWindow({}, [
             "ゲーム情報",
@@ -2054,7 +2054,7 @@ class GameView{
             }
         };
         const updateTextAreaContent = ()=>{
-            const newNode = this.model.history.getCurrentNode();
+            const newNode = this.model.getCurrentNode();
             const newText = newNode && newNode.hasComment() ? newNode.getComment() : "";
 
             if(newNode !== targetNode || newText != textarea.value){
@@ -2144,7 +2144,7 @@ class GameView{
                 case "click":
                     e.stopPropagation();
                     if( ! gameView.model.board.isEmpty(pos)){
-                        const currNode = gameView.model.history.getCurrentNode();
+                        const currNode = gameView.model.getCurrentNode();
 
                         createPopupMenu(e.clientX, e.clientY, [
                             {text:"この手まで戻る", handler:()=>gameView.backToMove(pos), visible:currNode.pos != pos},
@@ -2152,11 +2152,11 @@ class GameView{
                                 text:currNode.nexts.length > 0 ? "この手以降を削除" : "この手を削除",
                                 handler:()=>{
                                     gameView.model.backToMove(pos);
-                                    const node = gameView.model.history.getCurrentNode();
+                                    const node = gameView.model.getCurrentNode();
                                     if(node.pos == pos){
                                         gameView.model.undo();
                                     }
-                                    gameView.model.history.deleteBranch(node);
+                                    gameView.model.getCurrentNode().deleteNext(node);
                                     gameView.update();
                                 },
                                 visible:currNode.pos == pos
@@ -2294,7 +2294,7 @@ class GameView{
                     gameView.hideMoveModeUI();
                     gameView.boardElement.setStonePointerEventsEnabled(false); //石が盤面上のmouse/touchイベントを邪魔しないようにする
                     //基準となる盤面、手番
-                    const currNode = gameView.model.history.getCurrentNode();
+                    const currNode = gameView.model.getCurrentNode();
                     this.oldBoard =
                         currNode.isSetup() ?
                         gameView.model.getPreviousBoard() :
@@ -2313,7 +2313,7 @@ class GameView{
                     const boardChanges = BoardChanges.diffBoard(
                         gameView.model.board, this.oldBoard);
 
-                    const currNode = gameView.model.history.getCurrentNode();
+                    const currNode = gameView.model.getCurrentNode();
 
                     if(boardChanges.isEmpty()){
                         if(currNode.getSetup()){
@@ -2329,7 +2329,7 @@ class GameView{
                         const boardUndo = BoardChanges.createUndoChanges(
                             boardChanges, this.oldBoard);
                         if( ! currNode.isSetup()){
-                            gameView.model.history.pushSetupNode(
+                            gameView.model.pushSetupNode(
                                 boardChanges, boardUndo);
                             alert("Setup用のノードを追加しました。");
                         }
@@ -2340,7 +2340,7 @@ class GameView{
                             }
                             else{
                                 currNode.setSetup(boardChanges);
-                                gameView.model.history.setLastUndo(boardUndo);
+                                gameView.model.setLastUndo(boardUndo);
                             }
                         }
                     }
@@ -2545,7 +2545,7 @@ class GameView{
             }
 
             getMarkAt(pos){
-                const marks = gameView.model.history.getCurrentNode().getProperty("marks");
+                const marks = gameView.model.getCurrentNode().getProperty("marks");
                 if(marks && marks.value){
                     const index = marks.value.findIndex(m=>m.pos == pos);
                     if(index >= 0){
@@ -2589,7 +2589,7 @@ class GameView{
             putMark(pos, type, text){
                 const currMark = this.getMarkAt(pos);
                 if(!currMark){
-                    const marks = gameView.model.history.getCurrentNode().acquireProperty("marks", []);
+                    const marks = gameView.model.getCurrentNode().acquireProperty("marks", []);
                     if(type == "text"){
                         marks.value.push({pos, type, text});
                     }
@@ -2650,7 +2650,7 @@ function createTreeQueryURL(game, opt){
     // 現在の盤面を開くためのパスを求める。
     if(opt && opt.toCurrentNode){
         // 一本道なので最後のノード
-        const depth = game.history.getCurrentNode().getDepth();
+        const depth = game.getCurrentNode().getDepth();
         if(depth > 0){
             params.append("path", depth);
         }
@@ -2659,7 +2659,7 @@ function createTreeQueryURL(game, opt){
         // 最初が現在の盤面なので不要
     }
     else{
-        const forks = game.history.getCurrentNode().getPathFromRoot(true).map(dir=>String.fromCharCode(0x41 + dir));
+        const forks = game.getCurrentNode().getPathFromRoot(true).map(dir=>String.fromCharCode(0x41 + dir));
         if(forks.length > 0){
             forks.reverse();
             params.append("path", forks.join("-"));
@@ -2755,7 +2755,7 @@ function createGameFromQuery(){
     else{
         game = new Game(w, h);
         if(intersections){
-            const setup = game.history.getRootNode().acquireSetup();
+            const setup = game.getRootNode().acquireSetup();
             const size = Math.min(intersections.length, game.board.getIntersectionCount());
             for(let pos = 0; pos < size; ++pos){
                 const oldState = game.board.getAt(pos);
@@ -2770,7 +2770,7 @@ function createGameFromQuery(){
             const oldTurn = game.board.getTurn();
             const newTurn = turn;
             if(oldTurn != newTurn){
-                const setup = game.history.getRootNode().acquireSetup();
+                const setup = game.getRootNode().acquireSetup();
                 setup.setTurnChange(newTurn);
                 game.board.setTurn(newTurn);
             }

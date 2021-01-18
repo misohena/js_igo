@@ -821,6 +821,10 @@ class HistoryNode{
         }
         return num;
     }
+    getMoveNumberAt(pos){// return move number of stone specified by pos
+        const node = this.findMoveBack(pos);
+        return node ? node.getMoveNumber() : -1;
+    }
     getDepth(){
         let num = 0;
         for(let node = this; node.prev; node = node.prev){
@@ -845,6 +849,13 @@ class HistoryNode{
             --n;
         }
         return n > 0 && !clamp ? null : node;
+    }
+    findMoveBack(pos){
+        let node = this;
+        while(node && node.getPos() !== pos){
+            node = node.prev;
+        }
+        return node;
     }
 
     // Next Nodes
@@ -1066,7 +1077,6 @@ class HistoryTree{
     getNextNodes(){return this.pointer ? this.pointer.nexts : [];}
     getPreviousNode(){return this.pointer.prev;}
     getRootNode(){return this.first;}
-    findNextNodeByMove(pos, color){return this.pointer.findNextByMove(pos, color);}
 
     setCommentToCurrentNode(text){
         this.pointer.setComment(text);
@@ -1077,19 +1087,6 @@ class HistoryTree{
 
     // MoveNumber
     getMoveNumber(){return this.moveNumber;}
-
-    getMoveNumberAt(pos){// return move number of stone specified by pos
-        let num = this.moveNumber;
-        for(let node = this.pointer; node; node = node.prev){
-            if(node.pos == pos){
-                return num;
-            }
-            if(node.isMove()){
-                --num;
-            }
-        }
-        return -1;
-    }
 
     // Move
 
@@ -1248,15 +1245,6 @@ class HistoryTree{
         while(this.redo(game));
     }
 
-    // Tree Operations
-
-    deleteBranch(node){
-        this.pointer.deleteNext(node);
-    }
-    changeBranchOrder(pos, delta){
-        this.pointer.changeNextOrder(pos, delta);
-    }
-
     // Previous Board
     getPreviousBoard(game){
         if(this.undoStack.length > 0){
@@ -1362,8 +1350,6 @@ class Game{
 
     // History
 
-    getMoveNumber(){return this.history.getMoveNumber();}
-
     undo(){return this.history.undo(this);}
     redo(){return this.history.redo(this);}
     redoTo(descendant){return this.history.redoTo(descendant, this);}
@@ -1376,9 +1362,26 @@ class Game{
     redoAll(){this.history.redoAll(this);}
     backToMove(pos){this.history.backToMove(pos, this);}
 
-    setCommentToCurrentNode(text){this.history.setCommentToCurrentNode(text);}
+    pushSetupNode(changes, boardUndo){
+        return this.history.pushSetupNode(changes, boardUndo);
+    }
+    setLastUndo(boardUndo){
+        this.history.setLastUndo(boardUndo);
+    }
 
     getPreviousBoard(){return this.history.getPreviousBoard(this);}
+
+    // Node
+
+    getRootNode(){return this.history.getRootNode();}
+    getCurrentNode(){return this.history.getCurrentNode();}
+    getNextNodes(){return this.history.getNextNodes();}
+    getPreviousNode(){return this.history.getPreviousNode();}
+
+    getMoveNumber(){return this.history.getMoveNumber();}
+    getMoveNumberAt(pos){return this.history.getCurrentNode().getMoveNumberAt(pos);}
+
+    setCommentToCurrentNode(text){this.history.setCommentToCurrentNode(text);}
 
     // SGF
 
